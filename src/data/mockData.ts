@@ -42,7 +42,9 @@ export const PARTIDOS_INICIALES: Partido[] = [
     agregado_2T: 3,
     duracion_tiempo_min: 40,
     estado: 'finalizado',
-    creado_por: 'dt1234'
+    creado_por: 'dt1234',
+    torneo_id: 'torneo-apertura-2026',
+    torneo_nombre: 'Torneo Apertura 2026'
   },
   {
     id: 'part-02',
@@ -57,7 +59,9 @@ export const PARTIDOS_INICIALES: Partido[] = [
     agregado_2T: 4,
     duracion_tiempo_min: 40,
     estado: 'finalizado',
-    creado_por: 'dt1234'
+    creado_por: 'dt1234',
+    torneo_id: 'torneo-apertura-2026',
+    torneo_nombre: 'Torneo Apertura 2026'
   }
 ];
 

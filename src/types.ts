@@ -19,6 +19,27 @@ export type ModoRival = 'numero' | 'nombre_numero';
 export type CondicionPartido = 'local' | 'visitante';
 export type EstadoPartido = 'programado' | 'en_curso' | 'finalizado';
 
+export type TipoTorneo = 'Apertura' | 'Clausura' | 'Anual' | 'Copa' | 'Amistoso';
+export type EstadoTorneo = 'activo' | 'cerrado';
+
+export interface Torneo {
+  id: string;
+  nombre: string; // ej: "Torneo Apertura 2026"
+  tipo: TipoTorneo;
+  anio: number; // ej: 2026
+  estado: EstadoTorneo; // 'activo' | 'cerrado'
+  fechaInicio?: string;
+  fechaCierre?: string;
+  descripcion?: string;
+}
+
+export interface ClubConfig {
+  nombre: string; // Nombre del equipo (default: 'Los Halcones FC')
+  colorPropio: string; // Color hexadecimal principal del equipo (default: '#3ddc84')
+  colorRival: string; // Color hexadecimal por defecto del rival (default: '#e63946')
+  subtitulo?: string;
+}
+
 export interface Partido {
   id: string;
   fecha: string; // YYYY-MM-DD
@@ -38,6 +59,8 @@ export interface Partido {
   formacion_propia?: string;
   formacion_rival?: string;
   tiempo_actual?: 1 | 2;
+  torneo_id?: string; // ID del torneo o temporada
+  torneo_nombre?: string; // Nombre amigable del torneo
   created_at?: number;
 }
 

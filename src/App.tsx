@@ -79,6 +79,18 @@ export default function App() {
   useEffect(() => {
     cargarDatosLocales();
 
+    // Si hay Google Apps Script configurado y conexión a internet,
+    // sincronizar automáticamente los datos reales al iniciar la app
+    if (navigator.onLine && StorageService.getAppsScriptUrl()) {
+      ApiService.descargarTodoDeGoogleSheets()
+        .then((res) => {
+          if (res.ok) {
+            cargarDatosLocales();
+          }
+        })
+        .catch(() => {});
+    }
+
     // Sincronización automática periódica en segundo plano cada 30 segundos
     const syncInterval = setInterval(() => {
       if (navigator.onLine && StorageService.getAppsScriptUrl()) {
@@ -99,7 +111,14 @@ export default function App() {
 
   // Si no está autenticado, mostrar pantalla de login
   if (!sesion) {
-    return <LoginView onLoginExitoso={(s) => setSesion(s)} />;
+    return (
+      <LoginView 
+        onLoginExitoso={(s) => {
+          setSesion(s);
+          cargarDatosLocales();
+        }} 
+      />
+    );
   }
 
   // Manejo de Selección de Partido para ver detalle
@@ -218,6 +237,7 @@ export default function App() {
         {/* VISTA 8: CONFIGURACIÓN & GOOGLE SHEETS */}
         {vistaActual === 'configuracion' && (
           <ConfiguracionView
+            rol={sesion.rol}
             onDatosActualizados={cargarDatosLocales}
           />
         )}
@@ -226,7 +246,7 @@ export default function App() {
 
       {/* Footer minimalista */}
       <footer className="border-t border-[#243d2c]/60 py-4 px-6 text-center text-xs text-zinc-500">
-        <span>Los Halcones FC • Gestión de Partidos Fútbol 11 Amateur • Arquitectura Local-First & Google Sheets</span>
+        <span>{StorageService.getNombreEquipo()} • Gestión de Partidos Fútbol 11 Amateur • Arquitectura Local-First & Google Sheets</span>
       </footer>
 
     </div>

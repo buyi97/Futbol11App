@@ -5,7 +5,7 @@
  */
 
 import { StorageService } from './storage';
-import { Jugador, Partido, Convocado, RivalJugador, Incidencia, ItemColaSync } from '../types';
+import { Jugador, Partido, Convocado, RivalJugador, Incidencia, ItemColaSync, SesionAuth, RolUsuario } from '../types';
 
 export interface ApiResponse<T = any> {
   ok: boolean;
@@ -184,6 +184,111 @@ export const ApiService = {
     };
   }> {
     return ApiService.ping(targetUrl);
+  },
+
+  /**
+   * Autenticación real contra Google Apps Script o fallback a modo demo
+   */
+  async login(password: string): Promise<{
+    ok: boolean;
+    session?: SesionAuth;
+    error?: string;
+    esModoDemo?: boolean;
+  }> {
+    const trimmedPass = password.trim();
+    const url = StorageService.getAppsScriptUrl();
+
+    // 1. Si NO hay URL de Apps Script configurada, estamos en Modo Demo Offline
+    if (!url) {
+      if (trimmedPass === 'dt1234' || trimmedPass.toLowerCase() === 'editor') {
+        const sesion: SesionAuth = {
+          rol: 'editor',
+          nombreUsuario: 'Director Técnico (Demo)',
+          token: 'demo-dt-' + Date.now(),
+          expiraEn: Date.now() + 12 * 60 * 60 * 1000
+        };
+        StorageService.setAuth(sesion);
+        return { ok: true, session: sesion, esModoDemo: true };
+      } else if (trimmedPass === 'hincha11' || trimmedPass.toLowerCase() === 'lector') {
+        const sesion: SesionAuth = {
+          rol: 'lector',
+          nombreUsuario: 'Aficionado / Lector (Demo)',
+          token: 'demo-lector-' + Date.now(),
+          expiraEn: Date.now() + 12 * 60 * 60 * 1000
+        };
+        StorageService.setAuth(sesion);
+        return { ok: true, session: sesion, esModoDemo: true };
+      }
+      return {
+        ok: false,
+        error: 'Contraseña incorrecta para Modo Demo. Probá "dt1234" (Editor) o "hincha11" (Lector).'
+      };
+    }
+
+    // 2. Hay URL configurada: verificar la contraseña en vivo con Google Apps Script
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8'
+        },
+        body: JSON.stringify({
+          action: 'login',
+          password: trimmedPass
+        }),
+        redirect: 'follow'
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const json = await res.json();
+      if (json.ok && json.data) {
+        const rol: RolUsuario = json.data.rol === 'editor' ? 'editor' : 'lector';
+        const sesion: SesionAuth = {
+          rol,
+          nombreUsuario: rol === 'editor' ? 'Director Técnico' : 'Aficionado / Lector',
+          token: json.data.token || ('tok-' + Date.now()),
+          expiraEn: json.data.expiraEn || (Date.now() + 12 * 60 * 60 * 1000)
+        };
+        StorageService.setAuth(sesion);
+        return { ok: true, session: sesion, esModoDemo: false };
+      } else {
+        return {
+          ok: false,
+          error: json.error || 'Contraseña incorrecta según tu Google Apps Script.'
+        };
+      }
+    } catch (err: any) {
+      console.warn('[ApiService] Error al verificar login en Apps Script:', err.message);
+
+      // Fallback si no hay internet o falla el script: permitir entrar si coincide con credenciales demo
+      if (trimmedPass === 'dt1234' || trimmedPass.toLowerCase() === 'editor') {
+        const sesion: SesionAuth = {
+          rol: 'editor',
+          nombreUsuario: 'Director Técnico (Offline)',
+          token: 'offline-dt-' + Date.now(),
+          expiraEn: Date.now() + 12 * 60 * 60 * 1000
+        };
+        StorageService.setAuth(sesion);
+        return { ok: true, session: sesion, esModoDemo: true };
+      } else if (trimmedPass === 'hincha11' || trimmedPass.toLowerCase() === 'lector') {
+        const sesion: SesionAuth = {
+          rol: 'lector',
+          nombreUsuario: 'Aficionado (Offline)',
+          token: 'offline-lector-' + Date.now(),
+          expiraEn: Date.now() + 12 * 60 * 60 * 1000
+        };
+        StorageService.setAuth(sesion);
+        return { ok: true, session: sesion, esModoDemo: true };
+      }
+
+      return {
+        ok: false,
+        error: 'No se pudo validar con tu Google Apps Script (' + err.message + '). Verificá la URL o tu conexión.'
+      };
+    }
   },
 
   /**

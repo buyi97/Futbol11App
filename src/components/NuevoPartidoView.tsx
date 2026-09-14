@@ -65,9 +65,13 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   onCancelar
 }) => {
   // Datos generales
+  const torneos = StorageService.getTorneos();
+  const nombreEquipo = StorageService.getNombreEquipo();
+  const [torneoId, setTorneoId] = useState<string>(() => StorageService.getTorneoActivo()?.id || '');
+
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [rival, setRival] = useState('');
-  const [cancha, setCancha] = useState('Predio El Ombú - Cancha 1');
+  const [cancha, setCancha] = useState(`Predio ${nombreEquipo} - Cancha 1`);
   const [condicion, setCondicion] = useState<CondicionPartido>('local');
   const [duracionTiempoMin, setDuracionTiempoMin] = useState(40);
   const [modoRival, setModoRival] = useState<ModoRival>('nombre_numero');
@@ -358,6 +362,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     setIniciando(true);
 
     const partidoId = 'partido-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+    const torneoElegido = torneos.find(t => t.id === torneoId);
 
     const nuevoPartido: Partido = {
       id: partidoId,
@@ -374,7 +379,9 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
       resultado_rival: 0,
       agregado_1T: 0,
       agregado_2T: 0,
-      created_at: Date.now()
+      created_at: Date.now(),
+      torneo_id: torneoElegido ? torneoElegido.id : undefined,
+      torneo_nombre: torneoElegido ? torneoElegido.nombre : undefined
     };
 
     // Convocados finales Halcones (titulares con posiciones x, y)
@@ -516,13 +523,31 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
 
           <div>
             <label className="block text-xs font-semibold text-[#9aa89f] uppercase mb-1">
+              Torneo / Temporada
+            </label>
+            <select
+              value={torneoId}
+              onChange={(e) => setTorneoId(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-[#0f1712] border border-[#243d2c] rounded-xl text-sm text-white focus:outline-none focus:border-[#3ddc84]"
+            >
+              <option value="">(Sin Torneo / Partido Amistoso)</option>
+              {torneos.map(t => (
+                <option key={t.id} value={t.id}>
+                  🏆 {t.nombre} {t.estado === 'activo' ? '🟢 (En curso)' : '🔒 (Cerrado)'}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#9aa89f] uppercase mb-1">
               Cancha / Sede
             </label>
             <input
               type="text"
               value={cancha}
               onChange={(e) => setCancha(e.target.value)}
-              placeholder="Ej: Cancha 3 - Complejo Norte"
+              placeholder={`Ej: Predio ${nombreEquipo} - Cancha 1`}
               className="w-full px-3.5 py-2.5 bg-[#0f1712] border border-[#243d2c] rounded-xl text-sm text-white focus:outline-none focus:border-[#3ddc84]"
             />
           </div>
@@ -611,13 +636,13 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Convocatoria y Dorsales de Los Halcones */}
+      {/* 2. Convocatoria y Dorsales del Equipo Propio */}
       <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <h2 className="font-display font-bold text-lg text-white uppercase tracking-wider flex items-center gap-2">
               <Users className="w-4 h-4 text-[#3ddc84]" />
-              2. Convocatoria y Dorsales de Los Halcones FC
+              2. Convocatoria y Dorsales de {nombreEquipo}
             </h2>
             <p className="text-xs text-[#9aa89f]">
               Asigná los dorsales para este partido. Los titulares y suplentes se ordenan e intercambian directamente en la cancha táctica.
@@ -696,13 +721,13 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
         </div>
       </div>
 
-      {/* 3. Disposición Táctica en Cancha (EXCLUSIVO EQUIPO PROPIO: LOS HALCONES) */}
+      {/* 3. Disposición Táctica en Cancha (EQUIPO PROPIO) */}
       <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="font-display font-bold text-lg text-white uppercase tracking-wider flex items-center gap-2">
               <LayoutGrid className="w-4 h-4 text-[#3ddc84]" />
-              3. Disposición Táctica en Cancha (Los Halcones FC)
+              3. Disposición Táctica en Cancha ({nombreEquipo})
             </h2>
             <p className="text-xs text-[#9aa89f]">
               Intercambiá puestos tocando a un jugador y luego a otro (titulares y suplentes). Doble clic sobre el dorsal para editarlo.
@@ -710,7 +735,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 bg-[#0f1712] px-3 py-1.5 rounded-xl border border-[#243d2c]">
-            <span className="text-xs font-bold text-[#3ddc84]">⚽ Halcones: {formacionPropia}</span>
+            <span className="text-xs font-bold text-[#3ddc84]">⚽ {nombreEquipo}: {formacionPropia}</span>
           </div>
         </div>
 

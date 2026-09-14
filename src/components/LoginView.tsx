@@ -5,9 +5,26 @@
  */
 
 import React, { useState } from 'react';
-import { Shield, Lock, ArrowRight, Eye, EyeOff, CheckCircle2, UserCheck, AlertCircle } from 'lucide-react';
+import { 
+  Shield, 
+  Lock, 
+  ArrowRight, 
+  Eye, 
+  EyeOff, 
+  CheckCircle2, 
+  UserCheck, 
+  AlertCircle, 
+  Cloud, 
+  Settings, 
+  ChevronDown, 
+  ChevronUp,
+  ExternalLink,
+  Sparkles
+} from 'lucide-react';
 import { RolUsuario, SesionAuth } from '../types';
 import { StorageService } from '../services/storage';
+import { ApiService } from '../services/api';
+import { SoccerBallLogo } from './SoccerBallLogo';
 
 interface LoginViewProps {
   onLoginExitoso: (sesion: SesionAuth) => void;
@@ -18,8 +35,44 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginExitoso }) => {
   const [mostrarPassword, setMostrarPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
+  
+  // Configuración de URL en la pantalla de login
+  const [appsScriptUrl, setAppsScriptUrl] = useState(() => StorageService.getAppsScriptUrl());
+  const [mostrarConfigUrl, setMostrarConfigUrl] = useState(false);
+  const [guardandoUrl, setGuardandoUrl] = useState(false);
+  const [mensajeUrl, setMensajeUrl] = useState<string | null>(null);
 
-  const handleSubmit = (e?: React.FormEvent, customPass?: string) => {
+  const hayUrlConfigurada = Boolean(appsScriptUrl);
+
+  const handleGuardarUrlDirecta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = appsScriptUrl.trim();
+    if (!trimmed) {
+      StorageService.setAppsScriptUrl('');
+      setMensajeUrl('Modo demo activado (URL vacía).');
+      return;
+    }
+
+    setGuardandoUrl(true);
+    setMensajeUrl(null);
+    StorageService.setAppsScriptUrl(trimmed);
+
+    try {
+      const pingRes = await ApiService.testConexion(trimmed);
+      if (pingRes.ok) {
+        setMensajeUrl('¡Conexión exitosa con tu Google Apps Script!');
+        setTimeout(() => setMostrarConfigUrl(false), 1500);
+      } else {
+        setMensajeUrl('Guardada, pero falló el ping: ' + pingRes.message);
+      }
+    } catch (err: any) {
+      setMensajeUrl('Error de conexión: ' + err.message);
+    } finally {
+      setGuardandoUrl(false);
+    }
+  };
+
+  const handleSubmit = async (e?: React.FormEvent, customPass?: string) => {
     if (e) e.preventDefault();
     const pass = (customPass !== undefined ? customPass : password).trim();
     if (!pass) {
@@ -30,33 +83,22 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginExitoso }) => {
     setCargando(true);
     setError(null);
 
-    setTimeout(() => {
-      // Comparación con contraseñas por defecto (o verificables vía Apps Script si se desea)
-      // Editor default: dt1234
-      // Lector default: hincha11
-      if (pass === 'dt1234' || pass.toLowerCase() === 'editor') {
-        const sesion: SesionAuth = {
-          rol: 'editor',
-          nombreUsuario: 'Director Técnico',
-          token: 'tok-' + Date.now(),
-          expiraEn: Date.now() + 12 * 60 * 60 * 1000
-        };
-        StorageService.setAuth(sesion);
-        onLoginExitoso(sesion);
-      } else if (pass === 'hincha11' || pass.toLowerCase() === 'lector') {
-        const sesion: SesionAuth = {
-          rol: 'lector',
-          nombreUsuario: 'Aficionado / Lector',
-          token: 'tok-' + Date.now(),
-          expiraEn: Date.now() + 12 * 60 * 60 * 1000
-        };
-        StorageService.setAuth(sesion);
-        onLoginExitoso(sesion);
+    try {
+      const res = await ApiService.login(pass);
+      if (res.ok && res.session) {
+        // Si no es demo, intentar descargar datos frescos en segundo plano
+        if (!res.esModoDemo) {
+          ApiService.descargarTodoDeGoogleSheets().catch(() => {});
+        }
+        onLoginExitoso(res.session);
       } else {
-        setError('Contraseña incorrecta. Probá "dt1234" (Editor) o "hincha11" (Lector).');
-        setCargando(false);
+        setError(res.error || 'Contraseña incorrecta');
       }
-    }, 250);
+    } catch (err: any) {
+      setError('Error inesperado al iniciar sesión: ' + err.message);
+    } finally {
+      setCargando(false);
+    }
   };
 
   return (
@@ -67,27 +109,54 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginExitoso }) => {
         <div className="absolute -top-24 -left-24 w-48 h-48 bg-[#3ddc84]/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-[#ffb703]/10 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Header con Escudo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[#3ddc84] to-[#1b5e3a] p-1 shadow-lg shadow-[#3ddc84]/20 mb-3">
-            <div className="w-full h-full bg-[#0f1712] rounded-xl flex items-center justify-center">
-              <Shield className="w-8 h-8 text-[#3ddc84]" />
+        {/* Badge de Estado: Google Sheets vs Modo Demo */}
+        <div className="mb-4 flex items-center justify-center">
+          {hayUrlConfigurada ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[#3ddc84]/15 border border-[#3ddc84]/40 text-[#3ddc84]">
+              <span className="w-2 h-2 rounded-full bg-[#3ddc84] animate-pulse" />
+              Base de Datos Google Sheets Conectada
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[#ffb703]/15 border border-[#ffb703]/40 text-[#ffb703]">
+              <span className="w-2 h-2 rounded-full bg-[#ffb703]" />
+              Modo Demostración (Local)
+            </span>
+          )}
+        </div>
+
+        {/* Header con Pelota de Fútbol */}
+        <div className="text-center mb-6">
+          <div 
+            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl p-1 shadow-lg shadow-[#3ddc84]/20 mb-3"
+            style={{
+              background: `linear-gradient(135deg, ${StorageService.getClubConfig().colorPropio}, #182a1f)`
+            }}
+          >
+            <div className="w-full h-full bg-[#0f1712] rounded-xl flex items-center justify-center p-2.5">
+              <SoccerBallLogo className="w-10 h-10" />
             </div>
           </div>
           <h1 className="font-display font-bold text-2xl sm:text-3xl text-white tracking-wide uppercase">
-            Los Halcones FC
+            {StorageService.getNombreEquipo()}
           </h1>
-          <p className="text-sm text-[#9aa89f] mt-1">
+          <p className="text-xs sm:text-sm text-[#9aa89f] mt-1">
             Gestión de Partidos e Incidencias en Vivo — Fútbol 11
           </p>
         </div>
 
-        {/* Formulario */}
+        {/* Formulario de Login */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-[#9aa89f] uppercase tracking-wider mb-2">
-              Contraseña de Acceso
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-semibold text-[#9aa89f] uppercase tracking-wider">
+                Contraseña de Acceso
+              </label>
+              {hayUrlConfigurada && (
+                <span className="text-[10px] text-[#3ddc84]">
+                  Validación en vivo
+                </span>
+              )}
+            </div>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#9aa89f]">
                 <Lock className="w-4 h-4" />
@@ -100,7 +169,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginExitoso }) => {
                   setPassword(e.target.value);
                   if (error) setError(null);
                 }}
-                placeholder="Ingresá contraseña (ej: dt1234)"
+                placeholder={hayUrlConfigurada ? "Tu contraseña (DT o Lector)" : "Ingresá contraseña (ej: dt1234)"}
                 className="w-full pl-10 pr-11 py-3 bg-[#0f1712] border border-[#243d2c] focus:border-[#3ddc84] focus:ring-1 focus:ring-[#3ddc84] rounded-xl text-white placeholder-zinc-500 text-sm transition-all outline-none"
                 autoFocus
               />
@@ -125,7 +194,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginExitoso }) => {
             id="btn-submit-login"
             type="submit"
             disabled={cargando}
-            className="w-full py-3 px-4 bg-[#3ddc84] hover:bg-[#2bb46a] active:scale-[0.99] text-[#0f1712] font-bold rounded-xl transition-all shadow-lg shadow-[#3ddc84]/20 flex items-center justify-center gap-2 cursor-pointer font-display text-base tracking-wider"
+            className="w-full py-3 px-4 bg-[#3ddc84] hover:bg-[#2bb46a] active:scale-[0.99] text-[#0f1712] font-bold rounded-xl transition-all shadow-lg shadow-[#3ddc84]/20 flex items-center justify-center gap-2 cursor-pointer font-display text-base tracking-wider disabled:opacity-50"
           >
             {cargando ? (
               <span className="inline-block animate-spin mr-2">⭮</span>
@@ -138,38 +207,93 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginExitoso }) => {
           </button>
         </form>
 
-        {/* Acceso Rápido para Demostración */}
-        <div className="mt-8 pt-6 border-t border-[#243d2c]">
-          <p className="text-xs font-medium text-[#9aa89f] text-center mb-3">
-            Atajos de prueba rápida para esta demo:
+        {/* Atajos de acceso rápido o pistas */}
+        <div className="mt-6 pt-5 border-t border-[#243d2c]">
+          <p className="text-xs font-medium text-[#9aa89f] text-center mb-2.5">
+            {hayUrlConfigurada
+              ? 'Contraseñas por defecto de Google Apps Script:'
+              : 'Atajos de prueba rápida para esta demo:'}
           </p>
           <div className="grid grid-cols-2 gap-2.5">
             <button
               id="btn-quick-editor"
               type="button"
               onClick={() => handleSubmit(undefined, 'dt1234')}
-              className="flex flex-col items-center justify-center p-3 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84]/50 hover:bg-[#243d2c]/30 transition-all text-center cursor-pointer group"
+              disabled={cargando}
+              className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84]/50 hover:bg-[#243d2c]/30 transition-all text-center cursor-pointer group"
             >
               <span className="text-xs font-bold text-[#3ddc84] group-hover:scale-105 transition-transform flex items-center gap-1">
                 <UserCheck className="w-3.5 h-3.5" />
                 Rol Editor (DT)
               </span>
-              <span className="text-[11px] text-[#9aa89f] mt-0.5">Clave: dt1234</span>
+              <span className="text-[11px] text-[#9aa89f] mt-0.5">dt1234</span>
             </button>
 
             <button
               id="btn-quick-lector"
               type="button"
               onClick={() => handleSubmit(undefined, 'hincha11')}
-              className="flex flex-col items-center justify-center p-3 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-blue-400/50 hover:bg-[#243d2c]/30 transition-all text-center cursor-pointer group"
+              disabled={cargando}
+              className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-blue-400/50 hover:bg-[#243d2c]/30 transition-all text-center cursor-pointer group"
             >
               <span className="text-xs font-bold text-blue-400 group-hover:scale-105 transition-transform flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Rol Lector
               </span>
-              <span className="text-[11px] text-[#9aa89f] mt-0.5">Clave: hincha11</span>
+              <span className="text-[11px] text-[#9aa89f] mt-0.5">hincha11</span>
             </button>
           </div>
+        </div>
+
+        {/* Desplegable para configurar la URL de Google Sheets directamente */}
+        <div className="mt-4 pt-3 text-center">
+          <button
+            type="button"
+            onClick={() => setMostrarConfigUrl(!mostrarConfigUrl)}
+            className="text-[11px] text-[#9aa89f] hover:text-[#3ddc84] inline-flex items-center gap-1 transition-colors cursor-pointer"
+          >
+            <Settings className="w-3 h-3" />
+            <span>{hayUrlConfigurada ? 'Cambiar URL de Google Apps Script' : '¿Querés vincular tu Google Sheets ahora?'}</span>
+            {mostrarConfigUrl ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+
+          {mostrarConfigUrl && (
+            <form onSubmit={handleGuardarUrlDirecta} className="mt-3 p-3.5 bg-[#0f1712] border border-[#243d2c] rounded-xl text-left space-y-2.5 animate-in fade-in duration-200">
+              <label className="block text-[11px] font-semibold text-[#9aa89f] uppercase">
+                URL Web App Google Apps Script (/exec)
+              </label>
+              <input
+                type="url"
+                value={appsScriptUrl}
+                onChange={(e) => setAppsScriptUrl(e.target.value)}
+                placeholder="https://script.google.com/macros/s/.../exec"
+                className="w-full px-3 py-2 bg-[#182a1f] border border-[#243d2c] rounded-lg text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#3ddc84]"
+              />
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={guardandoUrl}
+                  className="px-3 py-1.5 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                >
+                  {guardandoUrl ? 'Verificando...' : 'Guardar y Vincular'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMostrarConfigUrl(false)}
+                  className="text-xs text-[#9aa89f] hover:text-white"
+                >
+                  Cancelar
+                </button>
+              </div>
+
+              {mensajeUrl && (
+                <p className="text-[11px] text-[#3ddc84] mt-1 leading-snug">
+                  {mensajeUrl}
+                </p>
+              )}
+            </form>
+          )}
         </div>
 
       </div>

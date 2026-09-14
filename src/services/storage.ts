@@ -13,7 +13,10 @@ import {
   RivalJugador,
   Incidencia,
   SesionAuth,
-  ItemColaSync
+  ItemColaSync,
+  ClubConfig,
+  Torneo,
+  TipoTorneo
 } from '../types';
 import {
   JUGADORES_INICIALES,
@@ -22,6 +25,7 @@ import {
   RIVALES_INICIALES,
   INCIDENCIAS_INICIALES
 } from '../data/mockData';
+import { DEFAULT_APPS_SCRIPT_URL } from '../config';
 
 const KEYS = {
   AUTH: 'futbol11_auth_session',
@@ -33,8 +37,39 @@ const KEYS = {
   INCIDENCIAS: 'futbol11_incidencias',
   PARTIDO_EN_VIVO: 'futbol11_partido_en_vivo_draft',
   COLA_SYNC: 'futbol11_cola_sync',
-  CONFIG: 'futbol11_config'
+  CONFIG: 'futbol11_config',
+  CLUB_CONFIG: 'futbol11_club_config',
+  TORNEOS: 'futbol11_torneos'
 };
+
+export const DEFAULT_CLUB_CONFIG: ClubConfig = {
+  nombre: 'Los Halcones FC',
+  colorPropio: '#3ddc84', // Verde tradicional
+  colorRival: '#e63946',  // Rojo rival clásico
+  subtitulo: 'Fútbol 11 Amateur'
+};
+
+export const DEFAULT_TORNEOS: Torneo[] = [
+  {
+    id: 'torneo-apertura-2026',
+    nombre: 'Torneo Apertura 2026',
+    tipo: 'Apertura',
+    anio: 2026,
+    estado: 'activo',
+    fechaInicio: '2026-03-01',
+    descripcion: 'Torneo oficial del primer semestre'
+  },
+  {
+    id: 'torneo-clausura-2025',
+    nombre: 'Torneo Clausura 2025',
+    tipo: 'Clausura',
+    anio: 2025,
+    estado: 'cerrado',
+    fechaInicio: '2025-08-01',
+    fechaCierre: '2025-12-15',
+    descripcion: 'Torneo anterior (Finalizado)'
+  }
+];
 
 export interface PartidoEnVivoDraft {
   partido: Partido;
@@ -79,11 +114,58 @@ export const StorageService = {
 
   // --- Apps Script URL ---
   getAppsScriptUrl(): string {
-    return localStorage.getItem(KEYS.APPS_SCRIPT_URL) || '';
+    // 1. Si viene como parámetro en la URL (?script=... o ?apps_script=...), guardarlo automáticamente
+    if (typeof window !== 'undefined' && window.location && window.location.search) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const scriptParam = params.get('script') || params.get('apps_script');
+        if (scriptParam && scriptParam.trim().startsWith('http')) {
+          const trimmed = scriptParam.trim();
+          localStorage.setItem(KEYS.APPS_SCRIPT_URL, trimmed);
+          // Limpiar el parámetro de la barra de direcciones para estética y seguridad
+          params.delete('script');
+          params.delete('apps_script');
+          const newSearch = params.toString();
+          const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
+          window.history.replaceState({}, '', newUrl);
+          return trimmed;
+        }
+      } catch {
+        // Ignorar si el entorno no tiene window
+      }
+    }
+
+    // 2. URL guardada en localStorage del dispositivo
+    const local = localStorage.getItem(KEYS.APPS_SCRIPT_URL);
+    if (local && local.trim() !== '') {
+      return local.trim();
+    }
+
+    // 3. Variable de entorno VITE_APPS_SCRIPT_URL
+    const envUrl = ((import.meta as any).env?.VITE_APPS_SCRIPT_URL as string) || '';
+    if (envUrl && envUrl.trim() !== '') {
+      return envUrl.trim();
+    }
+
+    // 4. URL predeterminada fijada en src/config.ts
+    const defUrl = (DEFAULT_APPS_SCRIPT_URL as string) || '';
+    if (defUrl && defUrl.trim() !== '') {
+      return defUrl.trim();
+    }
+
+    return '';
   },
 
   setAppsScriptUrl(url: string): void {
     localStorage.setItem(KEYS.APPS_SCRIPT_URL, url.trim());
+  },
+
+  getDefaultAppsScriptUrl(): string {
+    return ((DEFAULT_APPS_SCRIPT_URL as string) || '').trim();
+  },
+
+  isModoDemo(): boolean {
+    return !StorageService.getAppsScriptUrl();
   },
 
   // --- Inicialización y carga de datos ---
@@ -103,6 +185,12 @@ export const StorageService = {
     if (!localStorage.getItem(KEYS.INCIDENCIAS)) {
       localStorage.setItem(KEYS.INCIDENCIAS, JSON.stringify(INCIDENCIAS_INICIALES));
     }
+    if (!localStorage.getItem(KEYS.CLUB_CONFIG)) {
+      localStorage.setItem(KEYS.CLUB_CONFIG, JSON.stringify(DEFAULT_CLUB_CONFIG));
+    }
+    if (!localStorage.getItem(KEYS.TORNEOS)) {
+      localStorage.setItem(KEYS.TORNEOS, JSON.stringify(DEFAULT_TORNEOS));
+    }
   },
 
   resetToDefaultData(): void {
@@ -111,6 +199,8 @@ export const StorageService = {
     localStorage.setItem(KEYS.CONVOCADOS, JSON.stringify(CONVOCADOS_INICIALES));
     localStorage.setItem(KEYS.RIVALES, JSON.stringify(RIVALES_INICIALES));
     localStorage.setItem(KEYS.INCIDENCIAS, JSON.stringify(INCIDENCIAS_INICIALES));
+    localStorage.setItem(KEYS.CLUB_CONFIG, JSON.stringify(DEFAULT_CLUB_CONFIG));
+    localStorage.setItem(KEYS.TORNEOS, JSON.stringify(DEFAULT_TORNEOS));
     localStorage.removeItem(KEYS.PARTIDO_EN_VIVO);
     localStorage.setItem(KEYS.COLA_SYNC, JSON.stringify([]));
   },
@@ -294,5 +384,133 @@ export const StorageService = {
 
   limpiarColaSync(): void {
     localStorage.setItem(KEYS.COLA_SYNC, JSON.stringify([]));
+  },
+
+  // --- Identidad del Club y Colores ---
+  getClubConfig(): ClubConfig {
+    try {
+      const data = localStorage.getItem(KEYS.CLUB_CONFIG);
+      if (!data) return DEFAULT_CLUB_CONFIG;
+      const parsed = JSON.parse(data);
+      return {
+        nombre: parsed.nombre || DEFAULT_CLUB_CONFIG.nombre,
+        colorPropio: parsed.colorPropio || DEFAULT_CLUB_CONFIG.colorPropio,
+        colorRival: parsed.colorRival || DEFAULT_CLUB_CONFIG.colorRival,
+        subtitulo: parsed.subtitulo || DEFAULT_CLUB_CONFIG.subtitulo
+      };
+    } catch {
+      return DEFAULT_CLUB_CONFIG;
+    }
+  },
+
+  saveClubConfig(config: Partial<ClubConfig>): ClubConfig {
+    const actual = this.getClubConfig();
+    const updated: ClubConfig = {
+      ...actual,
+      ...config
+    };
+    localStorage.setItem(KEYS.CLUB_CONFIG, JSON.stringify(updated));
+    return updated;
+  },
+
+  getNombreEquipo(): string {
+    return this.getClubConfig().nombre;
+  },
+
+  getColores(): { propio: string; rival: string } {
+    const conf = this.getClubConfig();
+    return {
+      propio: conf.colorPropio || '#3ddc84',
+      rival: conf.colorRival || '#e63946'
+    };
+  },
+
+  // --- Gestión de Torneos y Temporadas ---
+  getTorneos(): Torneo[] {
+    try {
+      const data = localStorage.getItem(KEYS.TORNEOS);
+      if (!data) return DEFAULT_TORNEOS;
+      const parsed: Torneo[] = JSON.parse(data);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_TORNEOS;
+    } catch {
+      return DEFAULT_TORNEOS;
+    }
+  },
+
+  saveTorneos(torneos: Torneo[]): void {
+    localStorage.setItem(KEYS.TORNEOS, JSON.stringify(torneos));
+  },
+
+  getTorneoActivo(): Torneo | null {
+    const torneos = this.getTorneos();
+    return torneos.find(t => t.estado === 'activo') || null;
+  },
+
+  iniciarTorneo(
+    tipo: TipoTorneo,
+    anio: number,
+    nombrePersonalizado?: string,
+    descripcion?: string,
+    marcarComoActivo: boolean = true
+  ): Torneo {
+    const torneos = this.getTorneos();
+    const nombre = nombrePersonalizado?.trim() || `Torneo ${tipo} ${anio}`;
+    const id = 'torneo-' + tipo.toLowerCase() + '-' + anio + '-' + Date.now().toString(36).slice(-4);
+
+    // Si se marca como activo, los demás torneos activos se pueden cerrar o mantener según se elija
+    const list = marcarComoActivo 
+      ? torneos.map(t => (t.estado === 'activo' ? { ...t, estado: 'cerrado' as const } : t))
+      : [...torneos];
+
+    const nuevoTorneo: Torneo = {
+      id,
+      nombre,
+      tipo,
+      anio,
+      estado: marcarComoActivo ? 'activo' : 'cerrado',
+      fechaInicio: new Date().toISOString().split('T')[0],
+      descripcion: descripcion?.trim() || undefined
+    };
+
+    list.unshift(nuevoTorneo);
+    this.saveTorneos(list);
+    return nuevoTorneo;
+  },
+
+  cerrarTorneo(id: string): void {
+    const list = this.getTorneos().map(t => {
+      if (t.id === id) {
+        return {
+          ...t,
+          estado: 'cerrado' as const,
+          fechaCierre: new Date().toISOString().split('T')[0]
+        };
+      }
+      return t;
+    });
+    this.saveTorneos(list);
+  },
+
+  reabrirTorneo(id: string): void {
+    // Al reabrir, cerramos los otros para que solo haya uno activo
+    const list = this.getTorneos().map(t => {
+      if (t.id === id) {
+        return {
+          ...t,
+          estado: 'activo' as const,
+          fechaCierre: undefined
+        };
+      }
+      return {
+        ...t,
+        estado: 'cerrado' as const
+      };
+    });
+    this.saveTorneos(list);
+  },
+
+  eliminarTorneo(id: string): void {
+    const list = this.getTorneos().filter(t => t.id !== id);
+    this.saveTorneos(list.length > 0 ? list : DEFAULT_TORNEOS);
   }
 };

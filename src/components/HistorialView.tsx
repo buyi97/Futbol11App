@@ -41,15 +41,20 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
   hayPartidoEnVivo
 }) => {
   const esEditor = rol === 'editor';
+  const torneos = StorageService.getTorneos();
+  const nombreEquipo = StorageService.getNombreEquipo();
+
   const [busqueda, setBusqueda] = useState('');
   const [filtroResultado, setFiltroResultado] = useState<'todos' | 'victorias' | 'empates' | 'derrotas'>('todos');
+  const [filtroTorneo, setFiltroTorneo] = useState<string>('todos');
 
   // Modal para registrar partido jugado anteriormente
   const [modalRegistroPasado, setModalRegistroPasado] = useState(false);
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [rival, setRival] = useState('');
-  const [cancha, setCancha] = useState('Predio Los Halcones');
+  const [cancha, setCancha] = useState(`Predio ${nombreEquipo}`);
   const [condicion, setCondicion] = useState<CondicionPartido>('local');
+  const [torneoIdModal, setTorneoIdModal] = useState<string>(() => StorageService.getTorneoActivo()?.id || '');
   const [golesPropio, setGolesPropio] = useState<number>(0);
   const [golesRival, setGolesRival] = useState<number>(0);
   const [duracionTiempoMin, setDuracionTiempoMin] = useState<number>(40);
@@ -60,6 +65,13 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
     if (plantel && plantel.length > 0) {
       setJugadoresSeleccionados(plantel.filter(j => j.activo).map(j => j.id));
     }
+    const activo = StorageService.getTorneoActivo();
+    if (activo) {
+      setTorneoIdModal(activo.id);
+    } else if (torneos.length > 0) {
+      setTorneoIdModal(torneos[0].id);
+    }
+    setCancha(`Predio ${StorageService.getNombreEquipo()}`);
     setModalRegistroPasado(true);
   };
 
@@ -68,6 +80,7 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
     if (!rival.trim()) return;
 
     const partidoId = 'partido-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+    const torneoElegido = torneos.find(t => t.id === torneoIdModal);
 
     const nuevoPartido: Partido = {
       id: partidoId,
@@ -84,7 +97,9 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
       estado: 'finalizado',
       creado_por: 'Director Técnico',
       notas: notas.trim() || undefined,
-      created_at: Date.now()
+      created_at: Date.now(),
+      torneo_id: torneoElegido ? torneoElegido.id : undefined,
+      torneo_nombre: torneoElegido ? torneoElegido.nombre : undefined
     };
 
     // Crear convocados
@@ -124,7 +139,12 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
       coincideResultado = false;
     }
 
-    return coincideRival && coincideResultado;
+    let coincideTorneo = true;
+    if (filtroTorneo !== 'todos') {
+      coincideTorneo = p.torneo_id === filtroTorneo;
+    }
+
+    return coincideRival && coincideResultado && coincideTorneo;
   }).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
   return (
@@ -185,6 +205,19 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
           <select
+            value={filtroTorneo}
+            onChange={(e) => setFiltroTorneo(e.target.value)}
+            className="px-3 py-2 bg-[#0f1712] border border-[#243d2c] rounded-lg text-xs font-medium text-white focus:outline-none focus:border-[#3ddc84] max-w-[200px]"
+          >
+            <option value="todos">🏆 Todos los Torneos</option>
+            {torneos.map(t => (
+              <option key={t.id} value={t.id}>
+                {t.nombre} {t.estado === 'activo' ? '(Activo)' : ''}
+              </option>
+            ))}
+          </select>
+
+          <select
             value={filtroResultado}
             onChange={(e) => setFiltroResultado(e.target.value as any)}
             className="px-3 py-2 bg-[#0f1712] border border-[#243d2c] rounded-lg text-xs font-medium text-white focus:outline-none focus:border-[#3ddc84]"
@@ -235,13 +268,19 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
                   </div>
 
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-display font-bold text-lg sm:text-xl text-white group-hover:text-[#3ddc84] transition-colors">
                         vs {partido.rival}
                       </h3>
                       <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#0f1712] text-[#9aa89f] border border-[#243d2c] capitalize">
                         {partido.condicion}
                       </span>
+                      {partido.torneo_nombre && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#ffb703]/15 text-[#ffb703] border border-[#ffb703]/30 flex items-center gap-1">
+                          <Trophy className="w-3 h-3 text-[#ffb703]" />
+                          {partido.torneo_nombre}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#9aa89f] mt-1">
@@ -352,7 +391,7 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="Ej: Predio Los Halcones"
+                    placeholder={`Ej: Predio ${nombreEquipo}`}
                     value={cancha}
                     onChange={e => setCancha(e.target.value)}
                     className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
@@ -374,6 +413,25 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
                 </div>
               </div>
 
+              {/* Asignación de Torneo / Temporada */}
+              <div>
+                <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                  Torneo / Temporada Asignada
+                </label>
+                <select
+                  value={torneoIdModal}
+                  onChange={e => setTorneoIdModal(e.target.value)}
+                  className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                >
+                  <option value="">(Sin Torneo / Partido Amistoso Libre)</option>
+                  {torneos.map(t => (
+                    <option key={t.id} value={t.id}>
+                      🏆 {t.nombre} {t.estado === 'activo' ? '🟢 (En curso)' : '🔒 (Cerrado)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Marcador Final */}
               <div className="bg-[#0f1712] border border-[#243d2c] rounded-xl p-3">
                 <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-2 text-center">
@@ -382,7 +440,7 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
                 <div className="flex items-center justify-center gap-4">
                   <div className="text-center">
                     <span className="text-[10px] text-[#3ddc84] font-bold block uppercase mb-1">
-                      Los Halcones
+                      {nombreEquipo}
                     </span>
                     <input
                       type="number"

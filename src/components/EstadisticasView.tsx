@@ -31,6 +31,7 @@ import {
   getPosicionBadge,
   obtenerHistorialDetalladoJugador 
 } from '../utils/footballCalculations';
+import { StorageService } from '../services/storage';
 
 interface EstadisticasViewProps {
   jugadores: Jugador[];
@@ -42,6 +43,7 @@ interface EstadisticasViewProps {
 type CampoOrden = 
   | 'goles' 
   | 'asistencias' 
+  | 'tirosTotal'
   | 'tirosArco' 
   | 'faltas' 
   | 'minutosJugados' 
@@ -59,9 +61,18 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
   const [campoOrden, setCampoOrden] = useState<CampoOrden>('goles');
   const [ordenAsc, setOrdenAsc] = useState(false);
   const [jugadorModalId, setJugadorModalId] = useState<string | null>(null);
+  const [filtroTorneo, setFiltroTorneo] = useState<string>('todos');
 
-  const stats = calcularEstadisticasAcumuladas(jugadores, partidos, convocados, incidencias);
-  const resumen = calcularResumenEquipo(partidos, incidencias);
+  const torneos = StorageService.getTorneos();
+  const nombreEquipo = StorageService.getNombreEquipo();
+
+  // Filtrado por Torneo / Temporada
+  const partidosFiltradosPorTorneo = filtroTorneo === 'todos'
+    ? partidos
+    : partidos.filter(p => p.torneo_id === filtroTorneo);
+
+  const stats = calcularEstadisticasAcumuladas(jugadores, partidosFiltradosPorTorneo, convocados, incidencias);
+  const resumen = calcularResumenEquipo(partidosFiltradosPorTorneo, incidencias);
 
   // Ordenamiento
   const statsOrdenadas = [...stats]
@@ -69,7 +80,10 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
     .sort((a, b) => {
       const valA = a[campoOrden];
       const valB = b[campoOrden];
-      if (valA === valB) return b.goles - a.goles;
+      if (valA === valB) {
+        if (campoOrden === 'tirosTotal') return b.tirosArco - a.tirosArco;
+        return b.goles - a.goles;
+      }
       return ordenAsc ? (valA > valB ? 1 : -1) : (valA < valB ? 1 : -1);
     });
 
@@ -98,17 +112,43 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
   return (
     <div className="space-y-6 pb-16">
       
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2">
-          <BarChart3 className="w-6 h-6 text-[#3ddc84]" />
-          <h1 className="font-display font-bold text-2xl sm:text-3xl text-white uppercase tracking-wider">
-            Estadísticas del Equipo
-          </h1>
+      {/* Header con Filtro por Temporada / Torneo */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-6 h-6 text-[#3ddc84]" />
+            <h1 className="font-display font-bold text-2xl sm:text-3xl text-white uppercase tracking-wider">
+              Estadísticas del Equipo
+            </h1>
+          </div>
+          <p className="text-xs sm:text-sm text-[#9aa89f] mt-0.5">
+            Métricas acumuladas del plantel de <span className="text-white font-semibold">{nombreEquipo}</span>.
+          </p>
         </div>
-        <p className="text-xs sm:text-sm text-[#9aa89f] mt-0.5">
-          Métricas acumuladas del plantel de Los Halcones FC a lo largo de todos los partidos registrados.
-        </p>
+
+        {/* Selector de Torneo / Temporada */}
+        <div className="flex items-center gap-2 bg-[#182a1f] border border-[#243d2c] p-1.5 rounded-xl self-start sm:self-auto">
+          <Trophy className="w-4 h-4 text-[#ffb703] ml-1.5 shrink-0" />
+          <div className="flex flex-col">
+            <span className="text-[9px] text-[#9aa89f] uppercase font-bold tracking-wider leading-none">
+              Torneo / Temporada
+            </span>
+            <select
+              value={filtroTorneo}
+              onChange={(e) => setFiltroTorneo(e.target.value)}
+              className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-2 pt-0.5"
+            >
+              <option value="todos" className="bg-[#182a1f] text-white">
+                Todos los Torneos ({partidos.length} partidos)
+              </option>
+              {torneos.map(t => (
+                <option key={t.id} value={t.id} className="bg-[#182a1f] text-white">
+                  {t.nombre} {t.estado === 'activo' ? '🟢 (En curso)' : '🔒 (Cerrado)'}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Tarjetas de Métricas Clave */}
@@ -344,11 +384,12 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 </th>
 
                 <th 
-                  onClick={() => cambiarOrden('tirosArco')}
+                  onClick={() => cambiarOrden('tirosTotal')}
                   className="py-2 sm:py-2.5 px-1 sm:px-2 text-right cursor-pointer hover:text-white transition-colors select-none"
+                  title="Tiros Totales (y Tiros al Arco entre paréntesis)"
                 >
                   <div className="flex items-center justify-end gap-0.5 sm:gap-1">
-                    <span className="hidden sm:inline">Tiros Arco 🎯</span>
+                    <span className="hidden sm:inline">Tiros 🎯</span>
                     <span className="sm:hidden inline">🎯</span>
                     <ArrowUpDown className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                   </div>
@@ -433,8 +474,9 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                       {j.asistencias}
                     </td>
 
-                    <td className="py-2 sm:py-2.5 px-1 sm:px-2 text-right font-display font-bold text-xs sm:text-sm text-[#3ddc84]">
-                      {j.tirosArco}
+                    <td className="py-2 sm:py-2.5 px-1 sm:px-2 text-right font-display text-xs sm:text-sm whitespace-nowrap">
+                      <span className="font-bold text-white">{j.tirosTotal}</span>
+                      <span className="text-[#3ddc84] font-semibold ml-1">({j.tirosArco})</span>
                     </td>
 
                     <td className="py-2 sm:py-2.5 px-1 sm:px-2 text-right font-display font-bold text-xs sm:text-sm text-zinc-300">
@@ -501,7 +543,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                   </span>
                 </div>
                 <p className="text-xs text-[#9aa89f] mt-1">
-                  Los Halcones FC • Estado: {jugadorSeleccionado.activo ? 'En plantilla activa' : 'Inactivo'}
+                  {nombreEquipo} • Estado: {jugadorSeleccionado.activo ? 'En plantilla activa' : 'Inactivo'}
                 </p>
               </div>
             </div>
@@ -543,13 +585,13 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 </div>
 
                 <div className="p-3 rounded-xl bg-[#0f1712] border border-[#243d2c]">
-                  <span className="text-[10px] text-[#9aa89f] uppercase font-bold block">Tiros & Faltas</span>
-                  <div className="font-display font-bold text-xl text-white mt-0.5 flex items-center gap-2">
-                    <span>🎯 {statsJugadorSeleccionado.tirosArco}</span>
-                    <span className="text-zinc-400 text-sm">🚫 {statsJugadorSeleccionado.faltas}</span>
+                  <span className="text-[10px] text-[#9aa89f] uppercase font-bold block">Tiros: Totales (Al Arco)</span>
+                  <div className="font-display font-bold text-xl text-white mt-0.5 flex items-center gap-1.5">
+                    <span>🎯 {statsJugadorSeleccionado.tirosTotal}</span>
+                    <span className="text-[#3ddc84] text-sm">({statsJugadorSeleccionado.tirosArco})</span>
                   </div>
                   <span className="text-[10px] text-[#9aa89f]">
-                    {statsJugadorSeleccionado.tirosTotal} tiros totales
+                    🚫 {statsJugadorSeleccionado.faltas} faltas cometidas
                   </span>
                 </div>
               </div>

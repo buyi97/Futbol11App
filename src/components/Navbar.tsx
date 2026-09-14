@@ -21,6 +21,8 @@ import {
   UserCheck
 } from 'lucide-react';
 import { RolUsuario } from '../types';
+import { SoccerBallLogo } from './SoccerBallLogo';
+import { StorageService } from '../services/storage';
 
 export type VistaActual = 
   | 'inicio' 
@@ -42,6 +44,8 @@ interface NavbarProps {
   isOnline: boolean;
   onSincronizarAhora: () => void;
   isSyncing: boolean;
+  nombreEquipo?: string;
+  colorPropio?: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -53,30 +57,47 @@ export const Navbar: React.FC<NavbarProps> = ({
   colaSyncCount,
   isOnline,
   onSincronizarAhora,
-  isSyncing
+  isSyncing,
+  nombreEquipo,
+  colorPropio = '#3ddc84'
 }) => {
+  const nombreMostrar = nombreEquipo || StorageService.getNombreEquipo();
+
   return (
     <header className="sticky top-0 z-40 bg-[#0f1712]/95 backdrop-blur border-b border-[#243d2c]">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6">
         <div className="flex items-center justify-between h-16">
           
-          {/* Logo / Escudo y Nombre */}
+          {/* Logo con Pelota de Fútbol y Nombre del Club */}
           <div 
             id="nav-brand"
-            className="flex items-center gap-2.5 cursor-pointer select-none"
+            className="flex items-center gap-2.5 cursor-pointer select-none group"
             onClick={() => setVistaActual('inicio')}
+            title="Ir al inicio"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#3ddc84] to-[#1b5e3a] p-0.5 shadow-lg shadow-[#3ddc84]/15 flex items-center justify-center">
-              <div className="w-full h-full bg-[#0f1712] rounded-[10px] flex items-center justify-center">
-                <Shield className="w-5 h-5 text-[#3ddc84]" />
+            <div 
+              className="w-10 h-10 rounded-xl p-0.5 shadow-lg flex items-center justify-center transition-transform group-hover:scale-105"
+              style={{
+                background: `linear-gradient(135deg, ${colorPropio}, #182a1f)`,
+                boxShadow: `0 4px 14px -2px ${colorPropio}30`
+              }}
+            >
+              <div className="w-full h-full bg-[#0f1712] rounded-[10px] flex items-center justify-center p-1.5">
+                <SoccerBallLogo className="w-6 h-6" />
               </div>
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-display font-bold text-lg tracking-wider text-white uppercase">
-                  Los Halcones
+                <span className="font-display font-bold text-lg tracking-wider text-white uppercase truncate max-w-[160px] sm:max-w-[240px]">
+                  {nombreMostrar}
                 </span>
-                <span className="text-xs px-1.5 py-0.5 rounded bg-[#243d2c] text-[#3ddc84] font-medium font-display">
+                <span 
+                  className="text-xs px-1.5 py-0.5 rounded font-bold font-display"
+                  style={{
+                    backgroundColor: `${colorPropio}20`,
+                    color: colorPropio
+                  }}
+                >
                   F11
                 </span>
               </div>
