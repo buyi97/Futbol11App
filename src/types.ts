@@ -59,6 +59,7 @@ export interface Partido {
   formacion_propia?: string;
   formacion_rival?: string;
   tiempo_actual?: 1 | 2;
+  etiqueta?: string; // Ej: 'Fecha 1', 'Fecha 2', 'Cuartos de final', 'Amistoso'
   torneo_id?: string; // ID del torneo o temporada
   torneo_nombre?: string; // Nombre amigable del torneo
   created_at?: number;

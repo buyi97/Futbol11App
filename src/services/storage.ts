@@ -268,6 +268,29 @@ export const StorageService = {
     this.savePartidos(list);
   },
 
+  eliminarPartido(id: string): void {
+    const list = this.getPartidos().filter(p => p.id !== id);
+    this.savePartidos(list);
+
+    // Eliminar convocados del partido
+    const convocados = this.getConvocados().filter(c => c.partido_id !== id);
+    this.saveConvocados(convocados);
+
+    // Eliminar rivales del partido
+    const rivales = this.getRivales().filter(r => r.partido_id !== id);
+    this.saveRivales(rivales);
+
+    // Eliminar incidencias del partido
+    const incidencias = this.getIncidencias().filter(i => i.partido_id !== id);
+    this.saveIncidencias(incidencias);
+
+    // Si coincide con partido en vivo
+    const vivo = this.getPartidoEnVivo();
+    if (vivo && vivo.partido.id === id) {
+      this.clearPartidoEnVivo();
+    }
+  },
+
   // --- Convocados ---
   getConvocados(): Convocado[] {
     try {
@@ -414,7 +437,15 @@ export const StorageService = {
   },
 
   getNombreEquipo(): string {
-    return this.getClubConfig().nombre;
+    return this.getClubConfig().nombre || 'Los Halcones FC';
+  },
+
+  getColorPropio(): string {
+    return this.getClubConfig().colorPropio || '#3ddc84';
+  },
+
+  getColorRival(): string {
+    return this.getClubConfig().colorRival || '#e63946';
   },
 
   getColores(): { propio: string; rival: string } {
@@ -429,9 +460,9 @@ export const StorageService = {
   getTorneos(): Torneo[] {
     try {
       const data = localStorage.getItem(KEYS.TORNEOS);
-      if (!data) return DEFAULT_TORNEOS;
+      if (data === null) return DEFAULT_TORNEOS;
       const parsed: Torneo[] = JSON.parse(data);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_TORNEOS;
+      return Array.isArray(parsed) ? parsed : DEFAULT_TORNEOS;
     } catch {
       return DEFAULT_TORNEOS;
     }
@@ -511,6 +542,6 @@ export const StorageService = {
 
   eliminarTorneo(id: string): void {
     const list = this.getTorneos().filter(t => t.id !== id);
-    this.saveTorneos(list.length > 0 ? list : DEFAULT_TORNEOS);
+    this.saveTorneos(list);
   }
 };
