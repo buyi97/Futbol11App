@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #0f1712;
+  --color-bg-card: #182a1f;
+  --color-primary: #3ddc84;   /* verde césped */
+  --color-primary-dark: #2bb46a;
+  --color-accent: #ffb703;    /* acento cálido */
+  --color-amarilla: #f4c430;
+  --color-roja: #e63946;
+  --color-text: #f2f2f2;
+  --color-text-muted: #9aa89f;
+  --font-display: 'Rajdhani', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Custom sports scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0f1712;
+}
+::-webkit-scrollbar-thumb {
+  background: #243d2c;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3ddc84;
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Gestión Fútbol 11 Amateur",
+  "description": "Aplicación web para gestión de partidos, plantel, cronómetro e incidencias en vivo, estadísticas y sincronización con Google Sheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
