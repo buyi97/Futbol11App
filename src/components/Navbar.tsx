@@ -44,6 +44,8 @@ interface NavbarProps {
   isOnline: boolean;
   onSincronizarAhora: () => void;
   isSyncing: boolean;
+  onSincronizarDesdeSheets?: () => void;
+  isSyncingSheets?: boolean;
   nombreEquipo?: string;
   colorPropio?: string;
 }
@@ -58,6 +60,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   isOnline,
   onSincronizarAhora,
   isSyncing,
+  onSincronizarDesdeSheets,
+  isSyncingSheets = false,
   nombreEquipo,
   colorPropio = '#3ddc84'
 }) => {
@@ -192,18 +196,35 @@ export const Navbar: React.FC<NavbarProps> = ({
               Estadísticas
             </button>
 
-            <button
-              id="nav-btn-config"
-              onClick={() => setVistaActual('configuracion')}
-              className={`p-2 rounded-lg text-sm font-medium transition-all ${
-                vistaActual === 'configuracion'
-                  ? 'bg-[#182a1f] text-[#3ddc84] border border-[#2bb46a]/30'
-                  : 'text-[#9aa89f] hover:text-white hover:bg-[#182a1f]/60'
-              }`}
-              title="Configuración y Google Sheets"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
+            {rol === 'editor' ? (
+              <button
+                id="nav-btn-config"
+                onClick={() => setVistaActual('configuracion')}
+                className={`p-2 rounded-lg text-sm font-medium transition-all ${
+                  vistaActual === 'configuracion'
+                    ? 'bg-[#182a1f] text-[#3ddc84] border border-[#2bb46a]/30'
+                    : 'text-[#9aa89f] hover:text-white hover:bg-[#182a1f]/60'
+                }`}
+                title="Configuración y Google Sheets"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                id="nav-btn-sync-sheets"
+                onClick={onSincronizarDesdeSheets}
+                disabled={isSyncingSheets}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  isSyncingSheets
+                    ? 'bg-[#3ddc84]/15 text-[#3ddc84] border border-[#3ddc84]/30'
+                    : 'text-[#9aa89f] hover:text-[#3ddc84] hover:bg-[#182a1f]/60'
+                }`}
+                title="Sincronizar datos desde Google Sheets"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin text-[#3ddc84]' : ''}`} />
+                <span className="hidden lg:inline">{isSyncingSheets ? 'Sincronizando...' : 'Sincronizar Sheets'}</span>
+              </button>
+            )}
           </nav>
 
           {/* Estado de conexión, Sync y Perfil */}
@@ -326,15 +347,28 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span>Stats</span>
         </button>
 
-        <button
-          onClick={() => setVistaActual('configuracion')}
-          className={`flex flex-col items-center gap-1 p-1.5 rounded-lg text-[11px] font-medium transition-all ${
-            vistaActual === 'configuracion' ? 'text-[#3ddc84]' : 'text-[#9aa89f]'
-          }`}
-        >
-          <Settings className="w-4 h-4" />
-          <span>Ajustes</span>
-        </button>
+        {rol === 'editor' ? (
+          <button
+            onClick={() => setVistaActual('configuracion')}
+            className={`flex flex-col items-center gap-1 p-1.5 rounded-lg text-[11px] font-medium transition-all ${
+              vistaActual === 'configuracion' ? 'text-[#3ddc84]' : 'text-[#9aa89f]'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            <span>Ajustes</span>
+          </button>
+        ) : (
+          <button
+            onClick={onSincronizarDesdeSheets}
+            disabled={isSyncingSheets}
+            className={`flex flex-col items-center gap-1 p-1.5 rounded-lg text-[11px] font-medium transition-all ${
+              isSyncingSheets ? 'text-[#3ddc84]' : 'text-[#9aa89f]'
+            }`}
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin text-[#3ddc84]' : ''}`} />
+            <span>{isSyncingSheets ? 'Sync...' : 'Sincronizar'}</span>
+          </button>
+        )}
       </div>
     </header>
   );

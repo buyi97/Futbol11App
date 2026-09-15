@@ -634,7 +634,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
 
                 {historialJugadorSeleccionado.length > 0 ? (
                   <div className="space-y-2.5">
-                    {historialJugadorSeleccionado.map((h) => {
+                    {historialJugadorSeleccionado.map((h, hIdx) => {
                       const gano = h.resultadoPropio > h.resultadoRival;
                       const empato = h.resultadoPropio === h.resultadoRival;
                       const resultadoColor = gano ? 'text-[#3ddc84]' : empato ? 'text-[#ffb703]' : 'text-[#e63946]';
@@ -642,7 +642,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
 
                       return (
                         <div 
-                          key={h.partidoId}
+                          key={`${h.partidoId}-${hIdx}`}
                           className="p-3.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#243d2c]/80 transition-all"
                         >
                           <div className="flex items-center justify-between flex-wrap gap-2 mb-2">

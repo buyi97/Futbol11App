@@ -40,6 +40,9 @@ export default function App() {
   // Estado de sincronización
   const [colaCount, setColaCount] = useState<number>(0);
   const [hayPartidoEnVivo, setHayPartidoEnVivo] = useState<boolean>(false);
+  const [isSyncingSheets, setIsSyncingSheets] = useState<boolean>(false);
+  const [syncToastMessage, setSyncToastMessage] = useState<string | null>(null);
+  const [syncToastType, setSyncToastType] = useState<'success' | 'info' | 'error'>('info');
   const [nombreEquipo, setNombreEquipo] = useState<string>(() => StorageService.getNombreEquipo());
   const [colorPropio, setColorPropio] = useState<string>(() => StorageService.getColorPropio());
 
@@ -53,12 +56,18 @@ export default function App() {
     }
 
     const partidosLocal = StorageService.getPartidos();
+    const mapP = new Map<string, Partido>();
+    partidosLocal.forEach(p => {
+      if (p && p.id && !mapP.has(p.id)) mapP.set(p.id, p);
+    });
+    const partidosUnicos = Array.from(mapP.values());
+
     const convocadosLocal = StorageService.getConvocados();
     const rivalesLocal = StorageService.getRivales();
     const incidenciasLocal = StorageService.getIncidencias();
 
     setPlantel(pLocal);
-    setPartidos(partidosLocal);
+    setPartidos(partidosUnicos);
     setConvocados(convocadosLocal);
     setRivales(rivalesLocal);
     setIncidencias(incidenciasLocal);
@@ -95,22 +104,68 @@ export default function App() {
     }
   }, [partidos, partidoSeleccionadoId, vistaActual]);
 
+  // Si el usuario es LECTOR, no permitir acceso a configuración y redirigir al inicio
+  useEffect(() => {
+    if (sesion && sesion.rol === 'lector' && vistaActual === 'configuracion') {
+      setVistaActual('inicio');
+    }
+  }, [sesion, vistaActual]);
+
+  // Sincronización explícita o automática desde Google Sheets
+  const sincronizarDesdeSheets = useCallback(async (silencioso = false) => {
+    if (!navigator.onLine) {
+      if (!silencioso) {
+        setSyncToastMessage('Sin conexión a internet');
+        setSyncToastType('error');
+        setTimeout(() => setSyncToastMessage(null), 3500);
+      }
+      return;
+    }
+    const url = StorageService.getAppsScriptUrl();
+    if (!url) return;
+
+    setIsSyncingSheets(true);
+    if (!silencioso) {
+      setSyncToastMessage('Sincronizando con Google Sheets...');
+      setSyncToastType('info');
+    }
+
+    try {
+      const res = await ApiService.descargarTodoDeGoogleSheets((msg) => {
+        if (!silencioso) setSyncToastMessage(msg);
+      });
+      if (res.ok) {
+        cargarDatosLocales();
+        setSyncToastMessage('¡Sincronizado con Google Sheets!');
+        setSyncToastType('success');
+        setTimeout(() => setSyncToastMessage(null), 3000);
+      } else {
+        if (!silencioso) {
+          setSyncToastMessage(res.message || 'No se pudo sincronizar');
+          setSyncToastType('error');
+          setTimeout(() => setSyncToastMessage(null), 4000);
+        }
+      }
+    } catch (err: any) {
+      if (!silencioso) {
+        setSyncToastMessage('Error al sincronizar con Sheets: ' + (err.message || String(err)));
+        setSyncToastType('error');
+        setTimeout(() => setSyncToastMessage(null), 4000);
+      }
+    } finally {
+      setIsSyncingSheets(false);
+    }
+  }, [cargarDatosLocales]);
+
   useEffect(() => {
     cargarDatosLocales();
 
-    // Si hay Google Apps Script configurado y conexión a internet,
-    // sincronizar automáticamente los datos reales al iniciar la app
+    // Sincronizar automáticamente DESDE Google Sheets al ingresar cualquier LECTOR o EDITOR
     if (navigator.onLine && StorageService.getAppsScriptUrl()) {
-      ApiService.descargarTodoDeGoogleSheets()
-        .then((res) => {
-          if (res.ok) {
-            cargarDatosLocales();
-          }
-        })
-        .catch(() => {});
+      sincronizarDesdeSheets(true);
     }
 
-    // Sincronización automática periódica en segundo plano cada 30 segundos
+    // Sincronización periódica en segundo plano cada 30 segundos
     const syncInterval = setInterval(() => {
       if (navigator.onLine && StorageService.getAppsScriptUrl()) {
         ApiService.procesarColaSync().then(() => {
@@ -120,7 +175,7 @@ export default function App() {
     }, 30000);
 
     return () => clearInterval(syncInterval);
-  }, [cargarDatosLocales]);
+  }, [cargarDatosLocales, sincronizarDesdeSheets]);
 
   // Manejo de Logout
   const handleLogout = () => {
@@ -135,6 +190,8 @@ export default function App() {
         onLoginExitoso={(s) => {
           setSesion(s);
           cargarDatosLocales();
+          // Sincronización inmediata al entrar al sistema
+          sincronizarDesdeSheets(false);
         }} 
       />
     );
@@ -153,8 +210,31 @@ export default function App() {
   const incidenciasDelPartido = incidencias.filter(i => i.partido_id === partidoSeleccionadoId);
 
   return (
-    <div className="min-h-screen bg-[#0a100d] text-zinc-100 flex flex-col font-sans selection:bg-[#3ddc84] selection:text-[#0f1712]">
+    <div className="min-h-screen bg-[#0a100d] text-zinc-100 flex flex-col font-sans selection:bg-[#3ddc84] selection:text-[#0f1712] relative">
       
+      {/* Toast Notificación de Sincronización con Google Sheets */}
+      {syncToastMessage && (
+        <div 
+          className="fixed top-20 right-4 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-md border text-xs font-semibold animate-in slide-in-from-top-3 duration-300"
+          style={{
+            backgroundColor: syncToastType === 'success' ? '#182a1f' : syncToastType === 'error' ? '#2d1418' : '#14221c',
+            borderColor: syncToastType === 'success' ? '#3ddc84' : syncToastType === 'error' ? '#e63946' : '#2bb46a',
+            color: syncToastType === 'success' ? '#3ddc84' : syncToastType === 'error' ? '#ff6b6b' : '#a7f3d0'
+          }}
+        >
+          {isSyncingSheets ? (
+            <span className="inline-block animate-spin">⭮</span>
+          ) : syncToastType === 'success' ? (
+            <span>✓</span>
+          ) : syncToastType === 'error' ? (
+            <span>⚠</span>
+          ) : (
+            <span>ℹ</span>
+          )}
+          <span>{syncToastMessage}</span>
+        </div>
+      )}
+
       {/* Barra de Navegación Principal */}
       <Navbar
         vistaActual={vistaActual}
@@ -165,6 +245,16 @@ export default function App() {
         hayPartidoEnVivo={hayPartidoEnVivo}
         nombreEquipo={nombreEquipo}
         colorPropio={colorPropio}
+        isOnline={navigator.onLine}
+        isSyncing={isSyncingSheets}
+        isSyncingSheets={isSyncingSheets}
+        onSincronizarAhora={() => {
+          ApiService.procesarColaSync().then(() => {
+            setColaCount(StorageService.getColaSync().length);
+          });
+          sincronizarDesdeSheets(false);
+        }}
+        onSincronizarDesdeSheets={() => sincronizarDesdeSheets(false)}
       />
 
       {/* Contenido Dinámico de las Vistas */}

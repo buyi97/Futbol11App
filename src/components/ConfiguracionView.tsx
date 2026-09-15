@@ -45,6 +45,7 @@ import { StorageService } from '../services/storage';
 import { APPS_SCRIPT_CODE } from '../data/appsScriptCode';
 import { RolUsuario, ClubConfig, Torneo, TipoTorneo } from '../types';
 import { SoccerBallLogo } from './SoccerBallLogo';
+import { DEFAULT_APPS_SCRIPT_URL } from '../config';
 
 interface ConfiguracionViewProps {
   rol?: RolUsuario;
@@ -55,6 +56,26 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
   rol,
   onDatosActualizados
 }) => {
+  // Protección de acceso estricto: la configuración es exclusiva para rol Editor
+  if (rol === 'lector') {
+    return (
+      <div className="max-w-xl mx-auto py-12 px-4 text-center">
+        <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl p-8 text-center space-y-4 shadow-xl">
+          <div className="w-12 h-12 rounded-full bg-[#3ddc84]/15 border border-[#3ddc84]/30 flex items-center justify-center mx-auto text-[#3ddc84]">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-white uppercase tracking-wider">Acceso Restringido</h2>
+          <p className="text-sm text-[#9aa89f] leading-relaxed">
+            La sección de Ajustes y Configuración está reservada exclusivamente para los Directores Técnicos (rol Editor).
+          </p>
+          <p className="text-xs text-zinc-500">
+            Como Lector, tus datos se sincronizan automáticamente desde Google Sheets cada vez que entrás o presionando el botón "Sincronizar Sheets" en la barra superior.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const [urlAppScript, setUrlAppScript] = useState<string>(() => StorageService.getAppsScriptUrl());
   const [probando, setProbando] = useState(false);
   const [resultadoPing, setResultadoPing] = useState<{
@@ -301,14 +322,12 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
   const handleDescargarTodoDeGoogleSheets = async () => {
     const url = StorageService.getAppsScriptUrl();
     if (!url) {
-      alert('Primero configurá la URL de tu Google Apps Script.');
+      setResultadoSincronizacion({
+        ok: false,
+        message: 'No hay URL de Google Apps Script configurada.'
+      });
       return;
     }
-
-    const confirmar = window.confirm(
-      '¿Descargar y actualizar los datos locales desde Google Sheets? Se importará el plantel, partidos e incidencias existentes en la planilla.'
-    );
-    if (!confirmar) return;
 
     setSincronizandoTodo(true);
     setProgresoTexto('Descargando datos desde Google Sheets...');
@@ -324,14 +343,14 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
       if (res.ok) {
         setResultadoSincronizacion({
           ok: true,
-          message: '¡Datos descargados e integrados exitosamente en tu dispositivo!',
+          message: res.message || '¡Datos descargados e integrados exitosamente en tu dispositivo!',
           detalles: res.datos
         });
         onDatosActualizados();
       } else {
         setResultadoSincronizacion({
           ok: false,
-          message: res.message
+          message: res.message || 'Error al descargar datos desde Google Sheets'
         });
       }
     } catch (err: any) {
@@ -1112,6 +1131,20 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
 
             <button
               type="button"
+              onClick={() => {
+                setUrlAppScript(DEFAULT_APPS_SCRIPT_URL);
+                StorageService.setAppsScriptUrl(DEFAULT_APPS_SCRIPT_URL);
+                setResultadoPing(null);
+              }}
+              className="px-3.5 py-2 bg-[#0f1712] hover:bg-[#243d2c] text-[#9aa89f] hover:text-white border border-[#243d2c] text-xs font-medium rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+              title="Restaurar la URL predeterminada oficial de Google Apps Script"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Restaurar URL Oficial
+            </button>
+
+            <button
+              type="button"
               onClick={handleProbarPing}
               disabled={probando}
               className="px-4 py-2 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold text-xs rounded-xl shadow-md shadow-[#3ddc84]/20 flex items-center gap-1.5 transition-all cursor-pointer"
@@ -1133,6 +1166,21 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
             )}
           </div>
         </form>
+
+        {/* Compartir link preconfigurado para Lectores */}
+        <div className="pt-2 border-t border-[#243d2c]/60 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs text-[#9aa89f]">
+            <span>¿Cambiaste la URL? Podés compartir este link para que los lectores adopten la nueva base automáticamente:</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleCopiarLink}
+            className="px-3 py-1.5 bg-[#0f1712] hover:bg-[#243d2c] text-[#3ddc84] border border-[#243d2c] hover:border-[#3ddc84]/60 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            {copiadoLink ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+            {copiadoLink ? '¡Enlace Copiado!' : 'Copiar Enlace para Lectores'}
+          </button>
+        </div>
 
         {resultadoPing && (
           <div className="space-y-3">

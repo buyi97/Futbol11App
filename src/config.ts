@@ -9,7 +9,7 @@
  * sin necesidad de configurar nada en sus celulares.
  */
 
-export const DEFAULT_APPS_SCRIPT_URL = '';
+export const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzLktSEI1FJOGH8FwkqxD2CkwhL-beDHy_uqTSFRSkFQplTf3eO4Dk_gxGIzKAIko-svQ/exec';
 
 /**
  * Contraseñas predeterminadas para modo demostración / offline

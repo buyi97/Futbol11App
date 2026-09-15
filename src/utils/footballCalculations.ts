@@ -414,7 +414,14 @@ export function obtenerHistorialDetalladoJugador(
   incidencias: Incidencia[],
   jugadores: Jugador[]
 ): EventoPartidoJugador[] {
-  const finalizados = partidos.filter(p => p.estado === 'finalizado');
+  const mapPartidos = new Map<string, Partido>();
+  partidos.forEach(p => {
+    if (p && p.id && !mapPartidos.has(p.id)) {
+      mapPartidos.set(p.id, p);
+    }
+  });
+
+  const finalizados = Array.from(mapPartidos.values()).filter(p => p.estado === 'finalizado');
   const historial: EventoPartidoJugador[] = [];
 
   // Ordenar partidos de más reciente a más antiguo

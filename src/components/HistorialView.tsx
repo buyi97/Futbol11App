@@ -3,7 +3,7 @@
  * Listado histórico de partidos disputados y programados con filtros por resultado y fecha.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Calendar, 
   Search, 
@@ -167,26 +167,35 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
     }
   };
 
-  const partidosFiltrados = partidos.filter(p => {
-    const coincideRival = p.rival.toLowerCase().includes(busqueda.toLowerCase()) ||
-      (p.cancha && p.cancha.toLowerCase().includes(busqueda.toLowerCase()));
+  const partidosFiltrados = useMemo(() => {
+    const map = new Map<string, Partido>();
+    partidos.forEach(p => {
+      if (p && p.id && !map.has(p.id)) {
+        map.set(p.id, p);
+      }
+    });
 
-    let coincideResultado = true;
-    if (p.estado === 'finalizado') {
-      if (filtroResultado === 'victorias') coincideResultado = p.resultado_propio > p.resultado_rival;
-      if (filtroResultado === 'empates') coincideResultado = p.resultado_propio === p.resultado_rival;
-      if (filtroResultado === 'derrotas') coincideResultado = p.resultado_propio < p.resultado_rival;
-    } else if (filtroResultado !== 'todos') {
-      coincideResultado = false;
-    }
+    return Array.from(map.values()).filter(p => {
+      const coincideRival = p.rival.toLowerCase().includes(busqueda.toLowerCase()) ||
+        (p.cancha && p.cancha.toLowerCase().includes(busqueda.toLowerCase()));
 
-    let coincideTorneo = true;
-    if (filtroTorneo !== 'todos') {
-      coincideTorneo = p.torneo_id === filtroTorneo;
-    }
+      let coincideResultado = true;
+      if (p.estado === 'finalizado') {
+        if (filtroResultado === 'victorias') coincideResultado = p.resultado_propio > p.resultado_rival;
+        if (filtroResultado === 'empates') coincideResultado = p.resultado_propio === p.resultado_rival;
+        if (filtroResultado === 'derrotas') coincideResultado = p.resultado_propio < p.resultado_rival;
+      } else if (filtroResultado !== 'todos') {
+        coincideResultado = false;
+      }
 
-    return coincideRival && coincideResultado && coincideTorneo;
-  }).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      let coincideTorneo = true;
+      if (filtroTorneo !== 'todos') {
+        coincideTorneo = p.torneo_id === filtroTorneo;
+      }
+
+      return coincideRival && coincideResultado && coincideTorneo;
+    }).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+  }, [partidos, busqueda, filtroResultado, filtroTorneo]);
 
   return (
     <div className="space-y-5 pb-12">
@@ -274,7 +283,7 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
       {/* Lista de Partidos */}
       <div className="space-y-3">
         {partidosFiltrados.length > 0 ? (
-          partidosFiltrados.map((partido) => {
+          partidosFiltrados.map((partido, index) => {
             const esFinalizado = partido.estado === 'finalizado';
             const esVictoria = esFinalizado && partido.resultado_propio > partido.resultado_rival;
             const esEmpate = esFinalizado && partido.resultado_propio === partido.resultado_rival;
@@ -282,7 +291,7 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
 
             return (
               <div
-                key={partido.id}
+                key={`${partido.id}-${index}`}
                 onClick={() => onSeleccionarPartido(partido.id)}
                 className="bg-[#182a1f] border border-[#243d2c] hover:border-[#3ddc84]/50 rounded-2xl p-4 sm:p-5 shadow-lg transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
               >

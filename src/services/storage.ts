@@ -212,7 +212,18 @@ export const StorageService = {
   getJugadores(): Jugador[] {
     try {
       const data = localStorage.getItem(KEYS.JUGADORES);
-      return data ? JSON.parse(data) : JUGADORES_INICIALES;
+      if (!data) return JUGADORES_INICIALES;
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) {
+        const map = new Map<string, Jugador>();
+        parsed.forEach((j: any) => {
+          if (j && j.id && !map.has(j.id)) {
+            map.set(j.id, j);
+          }
+        });
+        return Array.from(map.values());
+      }
+      return JUGADORES_INICIALES;
     } catch {
       return JUGADORES_INICIALES;
     }
@@ -223,7 +234,13 @@ export const StorageService = {
   },
 
   saveJugadores(jugadores: Jugador[]): void {
-    localStorage.setItem(KEYS.JUGADORES, JSON.stringify(jugadores));
+    const map = new Map<string, Jugador>();
+    jugadores.forEach(j => {
+      if (j && j.id) {
+        map.set(j.id, j);
+      }
+    });
+    localStorage.setItem(KEYS.JUGADORES, JSON.stringify(Array.from(map.values())));
   },
 
   savePlantel(plantel: Jugador[]): void {
@@ -247,13 +264,23 @@ export const StorageService = {
     try {
       const data = localStorage.getItem(KEYS.PARTIDOS);
       if (data !== null) {
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          const map = new Map<string, Partido>();
+          parsed.forEach((p: any) => {
+            if (p && p.id && typeof p.id === 'string' && !map.has(p.id)) {
+              map.set(p.id, p);
+            }
+          });
+          return Array.from(map.values());
+        }
+        return [];
       }
       // Solo inicializar con datos de prueba si nunca se ha inicializado la base local
       const seeded = localStorage.getItem(KEYS.SEEDED);
       if (!seeded) {
         localStorage.setItem(KEYS.SEEDED, 'true');
-        localStorage.setItem(KEYS.PARTIDOS, JSON.stringify(PARTIDOS_INICIALES));
+        this.savePartidos(PARTIDOS_INICIALES);
         return PARTIDOS_INICIALES;
       }
       return [];
@@ -267,7 +294,14 @@ export const StorageService = {
   },
 
   savePartidos(partidos: Partido[]): void {
-    localStorage.setItem(KEYS.PARTIDOS, JSON.stringify(partidos));
+    const map = new Map<string, Partido>();
+    partidos.forEach(p => {
+      if (p && p.id && typeof p.id === 'string') {
+        map.set(p.id, p);
+      }
+    });
+    const unicos = Array.from(map.values());
+    localStorage.setItem(KEYS.PARTIDOS, JSON.stringify(unicos));
     localStorage.setItem(KEYS.SEEDED, 'true');
   },
 
@@ -333,7 +367,21 @@ export const StorageService = {
   getConvocados(): Convocado[] {
     try {
       const data = localStorage.getItem(KEYS.CONVOCADOS);
-      return data ? JSON.parse(data) : CONVOCADOS_INICIALES;
+      if (data !== null) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          const map = new Map<string, Convocado>();
+          parsed.forEach((c: any) => {
+            const key = c.id || `${c.partido_id}_${c.jugador_id}`;
+            if (key && !map.has(key)) {
+              map.set(key, c);
+            }
+          });
+          return Array.from(map.values());
+        }
+        return [];
+      }
+      return CONVOCADOS_INICIALES;
     } catch {
       return CONVOCADOS_INICIALES;
     }
@@ -344,14 +392,35 @@ export const StorageService = {
   },
 
   saveConvocados(convocados: Convocado[]): void {
-    localStorage.setItem(KEYS.CONVOCADOS, JSON.stringify(convocados));
+    const map = new Map<string, Convocado>();
+    convocados.forEach(c => {
+      const key = c.id || `${c.partido_id}_${c.jugador_id}`;
+      if (key) {
+        map.set(key, c);
+      }
+    });
+    localStorage.setItem(KEYS.CONVOCADOS, JSON.stringify(Array.from(map.values())));
   },
 
   // --- Rivales ---
   getRivales(): RivalJugador[] {
     try {
       const data = localStorage.getItem(KEYS.RIVALES);
-      return data ? JSON.parse(data) : RIVALES_INICIALES;
+      if (data !== null) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          const map = new Map<string, RivalJugador>();
+          parsed.forEach((r: any) => {
+            const key = r.id || `${r.partido_id}_${r.numero}`;
+            if (key && !map.has(key)) {
+              map.set(key, r);
+            }
+          });
+          return Array.from(map.values());
+        }
+        return [];
+      }
+      return RIVALES_INICIALES;
     } catch {
       return RIVALES_INICIALES;
     }
@@ -362,14 +431,34 @@ export const StorageService = {
   },
 
   saveRivales(rivales: RivalJugador[]): void {
-    localStorage.setItem(KEYS.RIVALES, JSON.stringify(rivales));
+    const map = new Map<string, RivalJugador>();
+    rivales.forEach(r => {
+      const key = r.id || `${r.partido_id}_${r.numero}`;
+      if (key) {
+        map.set(key, r);
+      }
+    });
+    localStorage.setItem(KEYS.RIVALES, JSON.stringify(Array.from(map.values())));
   },
 
   // --- Incidencias ---
   getIncidencias(): Incidencia[] {
     try {
       const data = localStorage.getItem(KEYS.INCIDENCIAS);
-      return data ? JSON.parse(data) : INCIDENCIAS_INICIALES;
+      if (data !== null) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          const map = new Map<string, Incidencia>();
+          parsed.forEach((i: any) => {
+            if (i && i.id && !map.has(i.id)) {
+              map.set(i.id, i);
+            }
+          });
+          return Array.from(map.values());
+        }
+        return [];
+      }
+      return INCIDENCIAS_INICIALES;
     } catch {
       return INCIDENCIAS_INICIALES;
     }
@@ -380,7 +469,13 @@ export const StorageService = {
   },
 
   saveIncidencias(incidencias: Incidencia[]): void {
-    localStorage.setItem(KEYS.INCIDENCIAS, JSON.stringify(incidencias));
+    const map = new Map<string, Incidencia>();
+    incidencias.forEach(i => {
+      if (i && i.id) {
+        map.set(i.id, i);
+      }
+    });
+    localStorage.setItem(KEYS.INCIDENCIAS, JSON.stringify(Array.from(map.values())));
   },
 
   addIncidencia(inc: Incidencia): void {
@@ -507,14 +602,29 @@ export const StorageService = {
       const data = localStorage.getItem(KEYS.TORNEOS);
       if (data === null) return DEFAULT_TORNEOS;
       const parsed: Torneo[] = JSON.parse(data);
-      return Array.isArray(parsed) ? parsed : DEFAULT_TORNEOS;
+      if (Array.isArray(parsed)) {
+        const map = new Map<string, Torneo>();
+        parsed.forEach(t => {
+          if (t && t.id && !map.has(t.id)) {
+            map.set(t.id, t);
+          }
+        });
+        return Array.from(map.values());
+      }
+      return DEFAULT_TORNEOS;
     } catch {
       return DEFAULT_TORNEOS;
     }
   },
 
   saveTorneos(torneos: Torneo[]): void {
-    localStorage.setItem(KEYS.TORNEOS, JSON.stringify(torneos));
+    const map = new Map<string, Torneo>();
+    torneos.forEach(t => {
+      if (t && t.id) {
+        map.set(t.id, t);
+      }
+    });
+    localStorage.setItem(KEYS.TORNEOS, JSON.stringify(Array.from(map.values())));
   },
 
   getTorneoActivo(): Torneo | null {

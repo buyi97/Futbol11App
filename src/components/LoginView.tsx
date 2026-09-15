@@ -245,55 +245,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginExitoso }) => {
           </div>
         </div>
 
-        {/* Desplegable para configurar la URL de Google Sheets directamente */}
+        {/* Indicador de conexión predeterminada */}
         <div className="mt-4 pt-3 text-center">
-          <button
-            type="button"
-            onClick={() => setMostrarConfigUrl(!mostrarConfigUrl)}
-            className="text-[11px] text-[#9aa89f] hover:text-[#3ddc84] inline-flex items-center gap-1 transition-colors cursor-pointer"
-          >
-            <Settings className="w-3 h-3" />
-            <span>{hayUrlConfigurada ? 'Cambiar URL de Google Apps Script' : '¿Querés vincular tu Google Sheets ahora?'}</span>
-            {mostrarConfigUrl ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
-
-          {mostrarConfigUrl && (
-            <form onSubmit={handleGuardarUrlDirecta} className="mt-3 p-3.5 bg-[#0f1712] border border-[#243d2c] rounded-xl text-left space-y-2.5 animate-in fade-in duration-200">
-              <label className="block text-[11px] font-semibold text-[#9aa89f] uppercase">
-                URL Web App Google Apps Script (/exec)
-              </label>
-              <input
-                type="url"
-                value={appsScriptUrl}
-                onChange={(e) => setAppsScriptUrl(e.target.value)}
-                placeholder="https://script.google.com/macros/s/.../exec"
-                className="w-full px-3 py-2 bg-[#182a1f] border border-[#243d2c] rounded-lg text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#3ddc84]"
-              />
-
-              <div className="flex items-center justify-between gap-2 pt-1">
-                <button
-                  type="submit"
-                  disabled={guardandoUrl}
-                  className="px-3 py-1.5 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold text-xs rounded-lg transition-colors cursor-pointer"
-                >
-                  {guardandoUrl ? 'Verificando...' : 'Guardar y Vincular'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMostrarConfigUrl(false)}
-                  className="text-xs text-[#9aa89f] hover:text-white"
-                >
-                  Cancelar
-                </button>
-              </div>
-
-              {mensajeUrl && (
-                <p className="text-[11px] text-[#3ddc84] mt-1 leading-snug">
-                  {mensajeUrl}
-                </p>
-              )}
-            </form>
-          )}
+          <p className="text-[11px] text-[#9aa89f] inline-flex items-center gap-1.5">
+            <Cloud className="w-3.5 h-3.5 text-[#3ddc84]" />
+            <span>Sincronización oficial con Google Sheets activa</span>
+          </p>
         </div>
 
       </div>

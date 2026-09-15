@@ -4,7 +4,7 @@
  * últimos resultados del equipo y accesos directos a las distintas áreas.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   Shield, 
   Play, 
@@ -59,10 +59,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   );
 
   const draftVivo = StorageService.getPartidoEnVivo();
-  const ultimosPartidos = [...partidos]
-    .filter(p => p.estado === 'finalizado')
-    .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
-    .slice(0, 3);
+  
+  // Deduplicar partidos por ID antes de calcular últimos partidos
+  const ultimosPartidos = useMemo(() => {
+    const map = new Map<string, Partido>();
+    partidos.forEach(p => {
+      if (p && p.id && !map.has(p.id)) {
+        map.set(p.id, p);
+      }
+    });
+    return Array.from(map.values())
+      .filter(p => p.estado === 'finalizado')
+      .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+      .slice(0, 3);
+  }, [partidos]);
 
   const topGoleadores = statsJugadores
     .filter(j => j.goles > 0)
@@ -273,13 +283,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="space-y-3">
             {ultimosPartidos.length > 0 ? (
-              ultimosPartidos.map(partido => {
+              ultimosPartidos.map((partido, idx) => {
                 const esVictoria = partido.resultado_propio > partido.resultado_rival;
                 const esEmpate = partido.resultado_propio === partido.resultado_rival;
 
                 return (
                   <div
-                    key={partido.id}
+                    key={`${partido.id}-${idx}`}
                     onClick={() => onSeleccionarPartido(partido.id)}
                     className="p-3.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84]/50 transition-all cursor-pointer flex items-center justify-between gap-4 group"
                   >

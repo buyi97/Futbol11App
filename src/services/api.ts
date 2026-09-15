@@ -713,6 +713,12 @@ export const ApiService = {
 
   /**
    * Descarga todos los datos vigentes desde Google Sheets y los guarda localmente.
+   * Cuenta con estrategia multi-fase y normalización completa:
+   * 1. Intenta la acción rápida consolidada 'obtenerTodo'.
+   * 2. Si el Apps Script desplegado es una versión anterior y no reconoce 'obtenerTodo'
+   *    (ej: "Acción no reconocida: obtenerTodo"), ejecuta automáticamente la descarga
+   *    mediante 'getPlantel', 'getHistorial' y 'getPartido', garantizando compatibilidad
+   *    absoluta con cualquier versión de Apps Script en producción.
    */
   async descargarTodoDeGoogleSheets(
     onProgreso?: (mensaje: string, porcentaje: number) => void
@@ -721,44 +727,305 @@ export const ApiService = {
     message: string;
     datos?: any;
   }> {
-    onProgreso?.('Consultando datos en Google Sheets...', 30);
-    const res = await ApiService.request('obtenerTodo');
-    if (res.ok && res.data) {
-      onProgreso?.('Actualizando almacenamiento local...', 75);
-      const data = res.data;
-      if (Array.isArray(data.plantel) && data.plantel.length > 0) {
-        StorageService.savePlantel(data.plantel);
+    const url = StorageService.getAppsScriptUrl();
+    if (!url) {
+      return {
+        ok: false,
+        message: 'No hay URL de Google Apps Script configurada.'
+      };
+    }
+
+    onProgreso?.('Consultando datos en Google Sheets...', 15);
+
+    // 1. Intentar endpoint consolidado 'obtenerTodo'
+    try {
+      const res = await ApiService.request('obtenerTodo');
+      if (res.ok && res.data && (Array.isArray(res.data.plantel) || Array.isArray(res.data.partidos))) {
+        onProgreso?.('Actualizando almacenamiento local...', 80);
+        const data = res.data;
+
+        if (Array.isArray(data.plantel) && data.plantel.length > 0) {
+          const mapJ = new Map<string, any>();
+          data.plantel.forEach((j: any) => {
+            if (j && j.id && !mapJ.has(j.id)) mapJ.set(j.id, j);
+          });
+          const plantelNorm = Array.from(mapJ.values()).map(normalizarJugador);
+          StorageService.savePlantel(plantelNorm);
+        }
+        if (Array.isArray(data.partidos)) {
+          const mapP = new Map<string, any>();
+          data.partidos.forEach((p: any) => {
+            if (p && p.id && !mapP.has(p.id)) mapP.set(p.id, p);
+          });
+          const partidosNorm = Array.from(mapP.values()).map(normalizarPartido);
+          StorageService.savePartidos(partidosNorm);
+
+          // Restaurar torneos si vienen en los partidos
+          restaurarTorneosDesdePartidos(partidosNorm);
+        }
+        if (Array.isArray(data.convocados)) {
+          const mapC = new Map<string, any>();
+          data.convocados.forEach((c: any) => {
+            const key = c.id || `${c.partido_id}_${c.jugador_id}`;
+            if (key && !mapC.has(key)) mapC.set(key, c);
+          });
+          StorageService.saveConvocados(Array.from(mapC.values()).map(normalizarConvocado));
+        }
+        if (Array.isArray(data.rivales)) {
+          const mapR = new Map<string, any>();
+          data.rivales.forEach((r: any) => {
+            const key = r.id || `${r.partido_id}_${r.numero}`;
+            if (key && !mapR.has(key)) mapR.set(key, r);
+          });
+          StorageService.saveRivales(Array.from(mapR.values()).map(normalizarRival));
+        }
+        if (Array.isArray(data.incidencias)) {
+          const mapI = new Map<string, any>();
+          data.incidencias.forEach((i: any) => {
+            if (i && i.id && !mapI.has(i.id)) mapI.set(i.id, i);
+          });
+          StorageService.saveIncidencias(Array.from(mapI.values()).map(normalizarIncidencia));
+        }
+        if (data.configuracion && typeof data.configuracion === 'object' && data.configuracion.nombre) {
+          StorageService.saveClubConfig({
+            nombre: data.configuracion.nombre,
+            colorPropio: data.configuracion.colorPropio || '#3ddc84',
+            colorRival: data.configuracion.colorRival || '#e63946'
+          });
+        }
+
+        try {
+          localStorage.setItem('futbol11_datos_inicializados_v1', 'true');
+        } catch {}
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('futbol11-datos-actualizados'));
+        }
+
+        onProgreso?.('¡Datos descargados con éxito!', 100);
+        return {
+          ok: true,
+          message: 'Datos descargados y sincronizados en tu dispositivo.',
+          datos: data
+        };
       }
-      if (Array.isArray(data.partidos) && data.partidos.length > 0) {
-        StorageService.savePartidos(data.partidos);
-      }
-      if (Array.isArray(data.convocados) && data.convocados.length > 0) {
-        StorageService.saveConvocados(data.convocados);
-      }
-      if (Array.isArray(data.rivales) && data.rivales.length > 0) {
-        StorageService.saveRivales(data.rivales);
-      }
-      if (Array.isArray(data.incidencias) && data.incidencias.length > 0) {
-        StorageService.saveIncidencias(data.incidencias);
-      }
-      if (data.configuracion && typeof data.configuracion === 'object' && data.configuracion.nombre) {
-        StorageService.saveClubConfig({
-          nombre: data.configuracion.nombre,
-          colorPropio: data.configuracion.colorPropio || '#3ddc84',
-          colorRival: data.configuracion.colorRival || '#e63946'
+    } catch (err) {
+      console.warn('[ApiService] Error al intentar obtenerTodo, ejecutando fallback:', err);
+    }
+
+    // 2. Fallback inteligente y resiliente: getPlantel + getHistorial + getPartido
+    try {
+      onProgreso?.('Descargando plantel de jugadores...', 30);
+      const resPlantel = await ApiService.request('getPlantel');
+      const jugadoresRaw: any[] = (resPlantel.ok && Array.isArray(resPlantel.data)) ? resPlantel.data : [];
+
+      onProgreso?.('Descargando historial de partidos...', 50);
+      const resHistorial = await ApiService.request('getHistorial');
+      const partidosRaw: any[] = (resHistorial.ok && Array.isArray(resHistorial.data)) ? resHistorial.data : [];
+
+      // Deduplicar partidos por ID antes de consultar sus detalles
+      const mapPartidosRaw = new Map<string, any>();
+      partidosRaw.forEach(p => {
+        if (p && p.id && !mapPartidosRaw.has(String(p.id))) {
+          mapPartidosRaw.set(String(p.id), p);
+        }
+      });
+      const partidosUnicos = Array.from(mapPartidosRaw.values());
+
+      const convocadosAcum: any[] = [];
+      const rivalesAcum: any[] = [];
+      const incidenciasAcum: any[] = [];
+
+      if (partidosUnicos.length > 0) {
+        onProgreso?.(`Descargando incidencias de ${partidosUnicos.length} partidos...`, 70);
+        // Consultar los partidos en paralelo para velocidad
+        const detallesPartidos = await Promise.all(
+          partidosUnicos.map(p => ApiService.request<any>('getPartido', { partido_id: p.id }).catch(() => ({ ok: false, data: null })))
+        );
+
+        detallesPartidos.forEach((dpRes: any) => {
+          if (dpRes && dpRes.ok && dpRes.data) {
+            if (Array.isArray(dpRes.data.convocados)) {
+              convocadosAcum.push(...dpRes.data.convocados);
+            }
+            if (Array.isArray(dpRes.data.rivales)) {
+              rivalesAcum.push(...dpRes.data.rivales);
+            }
+            if (Array.isArray(dpRes.data.incidencias)) {
+              incidenciasAcum.push(...dpRes.data.incidencias);
+            }
+          }
         });
       }
+
+      // Deduplicar jugadores, partidos, convocados, rivales e incidencias
+      const mapJ = new Map<string, any>();
+      jugadoresRaw.forEach(j => {
+        if (j && j.id && !mapJ.has(String(j.id))) mapJ.set(String(j.id), j);
+      });
+      const plantelNormalizado = Array.from(mapJ.values()).map(normalizarJugador);
+
+      const partidosNormalizados = partidosUnicos.map(normalizarPartido);
+
+      const mapC = new Map<string, any>();
+      convocadosAcum.forEach(c => {
+        const key = c.id || `${c.partido_id}_${c.jugador_id}`;
+        if (key && !mapC.has(key)) mapC.set(key, c);
+      });
+      const convocadosNormalizados = Array.from(mapC.values()).map(normalizarConvocado);
+
+      const mapR = new Map<string, any>();
+      rivalesAcum.forEach(r => {
+        const key = r.id || `${r.partido_id}_${r.numero}`;
+        if (key && !mapR.has(key)) mapR.set(key, r);
+      });
+      const rivalesNormalizados = Array.from(mapR.values()).map(normalizarRival);
+
+      const mapI = new Map<string, any>();
+      incidenciasAcum.forEach(i => {
+        if (i && i.id && !mapI.has(String(i.id))) mapI.set(String(i.id), i);
+      });
+      const incidenciasNormalizadas = Array.from(mapI.values()).map(normalizarIncidencia);
+
+      onProgreso?.('Guardando datos descargados localmente...', 90);
+      if (plantelNormalizado.length > 0) {
+        StorageService.savePlantel(plantelNormalizado);
+      }
+      StorageService.savePartidos(partidosNormalizados);
+      StorageService.saveConvocados(convocadosNormalizados);
+      StorageService.saveRivales(rivalesNormalizados);
+      StorageService.saveIncidencias(incidenciasNormalizadas);
+
+      // Restaurar torneos
+      restaurarTorneosDesdePartidos(partidosNormalizados);
+
+      try {
+        localStorage.setItem('futbol11_datos_inicializados_v1', 'true');
+      } catch {}
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('futbol11-datos-actualizados'));
+      }
+
       onProgreso?.('¡Datos descargados con éxito!', 100);
       return {
         ok: true,
-        message: 'Datos descargados y sincronizados en tu dispositivo.',
-        datos: data
+        message: `¡Sincronización exitosa! Se descargaron ${plantelNormalizado.length} jugadores, ${partidosNormalizados.length} partidos y ${incidenciasNormalizadas.length} incidencias.`,
+        datos: {
+          plantel: plantelNormalizado,
+          partidos: partidosNormalizados,
+          convocados: convocadosNormalizados,
+          rivales: rivalesNormalizados,
+          incidencias: incidenciasNormalizadas
+        }
+      };
+    } catch (fallbackErr: any) {
+      console.error('[ApiService] Error en descarga fallback de Sheets:', fallbackErr);
+      return {
+        ok: false,
+        message: 'Error al descargar datos desde Google Sheets: ' + (fallbackErr.message || String(fallbackErr))
       };
     }
-    return {
-      ok: false,
-      message: res.error || 'No se pudieron descargar los datos desde Google Sheets.'
-    };
   }
 
 };
+
+// Helpers de normalización
+function normalizarJugador(j: any): Jugador {
+  return {
+    id: String(j.id || ''),
+    nombre: String(j.nombre || ''),
+    numero: Number(j.numero) || 0,
+    posicion: (j.posicion as any) || 'Mediocampista',
+    activo: j.activo === true || j.activo === 'TRUE' || j.activo === 'true' || j.activo === 1,
+    fecha_alta: j.fecha_alta ? String(j.fecha_alta).split('T')[0] : new Date().toISOString().split('T')[0]
+  };
+}
+
+function normalizarPartido(p: any): Partido {
+  return {
+    id: String(p.id || ''),
+    fecha: p.fecha ? String(p.fecha).split('T')[0] : '',
+    rival: String(p.rival || 'Rival'),
+    modo_rival: p.modo_rival === 'numero' ? 'numero' : 'nombre_numero',
+    cancha: String(p.cancha || ''),
+    condicion: p.condicion === 'visitante' ? 'visitante' : 'local',
+    resultado_propio: Number(p.resultado_propio) || 0,
+    resultado_rival: Number(p.resultado_rival) || 0,
+    agregado_1T: Number(p.agregado_1T) || 0,
+    agregado_2T: Number(p.agregado_2T) || 0,
+    duracion_tiempo_min: Number(p.duracion_tiempo_min) || 40,
+    estado: (p.estado as any) || 'finalizado',
+    creado_por: String(p.creado_por || 'Director Técnico'),
+    etiqueta: p.etiqueta ? String(p.etiqueta) : undefined,
+    torneo_id: p.torneo_id ? String(p.torneo_id) : undefined,
+    torneo_nombre: p.torneo_nombre ? String(p.torneo_nombre) : undefined
+  };
+}
+
+function normalizarConvocado(c: any): Convocado {
+  return {
+    id: String(c.id || ''),
+    partido_id: String(c.partido_id || ''),
+    jugador_id: String(c.jugador_id || ''),
+    titular: c.titular === true || c.titular === 'TRUE' || c.titular === 'true' || c.titular === 1,
+    posicion_x: c.posicion_x !== undefined ? Number(c.posicion_x) : undefined,
+    posicion_y: c.posicion_y !== undefined ? Number(c.posicion_y) : undefined,
+    posicion_tactica: c.posicion_tactica ? String(c.posicion_tactica) : undefined,
+    numero: c.numero !== undefined ? Number(c.numero) : undefined,
+    posicion: c.posicion ? String(c.posicion) : undefined
+  };
+}
+
+function normalizarRival(r: any): RivalJugador {
+  return {
+    id: String(r.id || ''),
+    partido_id: String(r.partido_id || ''),
+    numero: Number(r.numero) || 0,
+    nombre: r.nombre ? String(r.nombre) : undefined
+  };
+}
+
+function normalizarIncidencia(i: any): Incidencia {
+  return {
+    id: String(i.id || ''),
+    partido_id: String(i.partido_id || ''),
+    tipo: i.tipo as any,
+    minuto: Number(i.minuto) || 0,
+    segundo: Number(i.segundo) || 0,
+    tiempo: Number(i.tiempo) === 2 ? 2 : 1,
+    equipo: i.equipo === 'rival' ? 'rival' : 'propio',
+    jugador_id: i.jugador_id ? String(i.jugador_id) : undefined,
+    jugador_id_secundario: (i.jugador_id_secundario || i.jugador_secundario_id) ? String(i.jugador_id_secundario || i.jugador_secundario_id) : undefined,
+    detalle: i.detalle ? String(i.detalle) : undefined
+  };
+}
+
+function restaurarTorneosDesdePartidos(partidos: Partido[]) {
+  try {
+    const torneosExistentes = StorageService.getTorneos();
+    let modificados = false;
+    partidos.forEach(p => {
+      if (p.torneo_id && !torneosExistentes.some(t => t.id === p.torneo_id)) {
+        const nombreLower = (p.torneo_nombre || '').toLowerCase();
+        let tipoTorneo: any = 'Apertura';
+        if (nombreLower.includes('clausura')) tipoTorneo = 'Clausura';
+        else if (nombreLower.includes('copa')) tipoTorneo = 'Copa';
+        else if (nombreLower.includes('amistoso')) tipoTorneo = 'Amistoso';
+        else if (nombreLower.includes('anual')) tipoTorneo = 'Anual';
+
+        torneosExistentes.push({
+          id: p.torneo_id,
+          nombre: p.torneo_nombre || p.torneo_id,
+          tipo: tipoTorneo,
+          anio: p.fecha ? (Number(p.fecha.substring(0, 4)) || 2026) : 2026,
+          estado: 'activo'
+        });
+        modificados = true;
+      }
+    });
+    if (modificados) {
+      StorageService.saveTorneos(torneosExistentes);
+    }
+  } catch {}
+}
