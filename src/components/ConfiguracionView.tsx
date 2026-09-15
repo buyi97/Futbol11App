@@ -36,7 +36,9 @@ import {
   Lock,
   Plus,
   RotateCcw,
-  Calendar
+  Calendar,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { ApiService } from '../services/api';
 import { StorageService } from '../services/storage';
@@ -143,10 +145,14 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
   // Partidos para contar por torneo
   const partidos = StorageService.getPartidos();
 
-  const handleGuardarClubConfig = (e: React.FormEvent) => {
+  // Estado para confirmación de borrado de torneo
+  const [torneoABorrar, setTorneoABorrar] = useState<{ id: string; nombre: string; cantPartidos: number } | null>(null);
+  const [borrandoTorneo, setBorrandoTorneo] = useState(false);
+
+  const handleGuardarClubConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!esEditor) return;
-    const nuevoNombre = nombreEquipoInput.trim() || 'Los Halcones FC';
+    const nuevoNombre = nombreEquipoInput.trim() || StorageService.getNombreEquipo();
     const nuevoConfig: ClubConfig = {
       nombre: nuevoNombre,
       colorPropio: colorPropioInput,
@@ -156,7 +162,39 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
     setClubConfig(nuevoConfig);
     setMensajeClubGuardado(true);
     setTimeout(() => setMensajeClubGuardado(false), 3500);
+
+    // Persistir explícitamente en la base de datos Google Sheets
+    await ApiService.guardarClubConfig(nuevoConfig);
+
     onDatosActualizados();
+  };
+
+  const handlePedirConfirmarBorrarTorneo = (id: string, nombre: string) => {
+    if (!esEditor) return;
+    const partidosTorneo = StorageService.getPartidos().filter(
+      p => p.torneo_id === id || p.torneo_nombre === nombre
+    );
+    setTorneoABorrar({
+      id,
+      nombre,
+      cantPartidos: partidosTorneo.length
+    });
+  };
+
+  const handleConfirmarBorradoTorneo = async () => {
+    if (!torneoABorrar) return;
+    setBorrandoTorneo(true);
+    try {
+      await ApiService.eliminarTorneo(torneoABorrar.id);
+      const torneosActualizados = StorageService.getTorneos();
+      setTorneos(torneosActualizados);
+      setMensajeTorneoGuardado(`Se eliminó el torneo "${torneoABorrar.nombre}" y sus ${torneoABorrar.cantPartidos} partidos asociados.`);
+      setTimeout(() => setMensajeTorneoGuardado(null), 4000);
+      setTorneoABorrar(null);
+      onDatosActualizados();
+    } finally {
+      setBorrandoTorneo(false);
+    }
   };
 
   const handleTipoTorneoChange = (tipo: TipoTorneo) => {
@@ -391,7 +429,8 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `los_halcones_fc_backup_${new Date().toISOString().split('T')[0]}.json`;
+    const cleanName = (clubConfig.nombre || 'club').toLowerCase().replace(/[^a-z0-9]/g, '_');
+    a.download = `${cleanName}_backup_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -852,21 +891,41 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
                   {esEditor && (
                     <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#243d2c]">
                       {esActivo ? (
-                        <button
-                          type="button"
-                          onClick={() => handleCerrarTorneo(t.id, t.nombre)}
-                          className="px-3 py-1 bg-[#0f1712] hover:bg-[#e63946]/20 border border-[#e63946]/40 text-[#e63946] text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                        >
-                          Cerrar Temporada
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleCerrarTorneo(t.id, t.nombre)}
+                            className="px-3 py-1 bg-[#0f1712] hover:bg-amber-500/20 border border-amber-500/40 text-amber-400 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                          >
+                            Cerrar Temporada
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePedirConfirmarBorrarTorneo(t.id, t.nombre)}
+                            className="px-2.5 py-1 bg-[#0f1712] hover:bg-[#e63946]/20 border border-[#e63946]/40 text-[#e63946] text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                            title="Borrar torneo y todos sus partidos"
+                          >
+                            <Trash2 className="w-3 h-3" /> Borrar
+                          </button>
+                        </div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleReabrirTorneo(t.id, t.nombre)}
-                          className="px-3 py-1 bg-[#0f1712] hover:bg-[#3ddc84]/20 border border-[#3ddc84]/40 text-[#3ddc84] text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                          <RotateCcw className="w-3 h-3" /> Reabrir como Activo
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleReabrirTorneo(t.id, t.nombre)}
+                            className="px-3 py-1 bg-[#0f1712] hover:bg-[#3ddc84]/20 border border-[#3ddc84]/40 text-[#3ddc84] text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <RotateCcw className="w-3 h-3" /> Reabrir como Activo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePedirConfirmarBorrarTorneo(t.id, t.nombre)}
+                            className="px-2.5 py-1 bg-[#0f1712] hover:bg-[#e63946]/20 border border-[#e63946]/40 text-[#e63946] text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                            title="Borrar este torneo y todos sus partidos"
+                          >
+                            <Trash2 className="w-3 h-3" /> Borrar Torneo
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}
@@ -1423,7 +1482,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
         </div>
 
         <ol className="list-decimal list-inside space-y-2 text-xs text-[#9aa89f] leading-relaxed">
-          <li>Creá una nueva planilla en blanco en Google Sheets llamada <strong>"Fútbol 11 - Los Halcones"</strong>.</li>
+          <li>Creá una nueva planilla en blanco en Google Sheets llamada <strong>{`"Fútbol 11 - ${clubConfig.nombre}"`}</strong>.</li>
           <li>En el menú superior, andá a <strong>Extensiones ➔ Apps Script</strong>.</li>
           <li>Borrá el código existente y pegá el código copiado con el botón de arriba (o el archivo <code className="text-[#3ddc84]">apps-script/Code.gs</code>).</li>
           <li>Hacé clic en <strong>Implementar ➔ Nueva implementación</strong> (o <em>Administrar implementaciones &gt; Editar &gt; Nueva versión</em> si ya lo tenías).</li>
@@ -1450,6 +1509,61 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Modal Confirmación Borrado de Torneo y Partidos */}
+      {torneoABorrar && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#182a1f] border border-[#e63946]/50 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-[#e63946]">
+              <div className="w-10 h-10 rounded-xl bg-[#e63946]/10 border border-[#e63946]/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-lg text-white">
+                  ¿Borrar torneo y todos sus partidos?
+                </h3>
+                <p className="text-xs text-[#9aa89f]">Se eliminará el torneo y todos los partidos vinculados a él.</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#0f1712] border border-[#243d2c] text-xs text-white space-y-1.5">
+              <div><strong className="text-[#9aa89f]">Torneo:</strong> {torneoABorrar.nombre}</div>
+              <div>
+                <strong className="text-[#9aa89f]">Partidos a eliminar:</strong>{' '}
+                <span className="text-[#e63946] font-bold">
+                  {torneoABorrar.cantPartidos} {torneoABorrar.cantPartidos === 1 ? 'partido' : 'partidos'}
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-300 pt-1">
+                ⚠️ Se borrarán las planillas, alineaciones, estadísticas e incidencias de esos partidos.
+              </p>
+              <p className="text-[11px] text-[#3ddc84] pt-0.5">
+                💡 Podrás deshacer esta acción inmediatamente usando el botón flotante.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={borrandoTorneo}
+                onClick={() => setTorneoABorrar(null)}
+                className="px-4 py-2 bg-[#0f1712] border border-[#243d2c] text-[#9aa89f] hover:text-white rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={borrandoTorneo}
+                onClick={handleConfirmarBorradoTorneo}
+                className="px-4 py-2 bg-[#e63946] hover:bg-[#d92d3b] text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-lg shadow-[#e63946]/20"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {borrandoTorneo ? 'Borrando...' : 'Sí, Borrar Torneo y Partidos'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -57,13 +57,20 @@ interface PartidoVivoViewProps {
   jugadores: Jugador[];
   onPartidoFinalizado: (partidoId: string) => void;
   onVolver: () => void;
+  nombreEquipo?: string;
+  colorPropio?: string;
 }
 
 export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   jugadores,
   onPartidoFinalizado,
-  onVolver
+  onVolver,
+  nombreEquipo,
+  colorPropio
 }) => {
+  const nombreClub = nombreEquipo || StorageService.getNombreEquipo();
+  const colorClub = colorPropio || StorageService.getColorPropio();
+
   // Cargar borrador del partido en vivo
   const [draft, setDraft] = useState<PartidoEnVivoDraft | null>(() => StorageService.getPartidoEnVivo());
 
@@ -433,8 +440,11 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
           
           {/* Equipo Propio */}
           <div className="flex-1 text-center sm:text-left min-w-0">
-            <span className="text-[11px] font-bold text-[#3ddc84] uppercase tracking-wider block truncate">
-              Los Halcones (Local)
+            <span 
+              className="text-[11px] font-bold uppercase tracking-wider block truncate"
+              style={{ color: colorClub }}
+            >
+              {nombreClub} ({draft.partido.condicion || 'Local'})
             </span>
             <div className="font-display font-bold text-3xl sm:text-4xl text-white">
               {golesPropio}
@@ -779,7 +789,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                         <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
                           esPropio ? 'bg-[#3ddc84]/15 text-[#3ddc84]' : 'bg-[#ffb703]/15 text-[#ffb703]'
                         }`}>
-                          {esPropio ? 'Los Halcones' : draft.partido.rival}
+                          {esPropio ? nombreClub : draft.partido.rival}
                         </span>
                       </div>
 
@@ -789,7 +799,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                             Sale: <strong className="text-white">#{convocadoObj?.numero || jugadorObj?.numero} {jugadorObj?.nombre || 'Jugador'}</strong> ➔ Entra: <strong className="text-[#3ddc84]">#{convocadoSecObj?.numero || jugadorSecObj?.numero} {jugadorSecObj?.nombre || 'Jugador'}</strong>
                           </>
                         ) : inc.tipo === 'corner' ? (
-                          <>Córner para {esPropio ? 'Los Halcones FC' : draft.partido.rival}</>
+                          <>Córner para {esPropio ? nombreClub : draft.partido.rival}</>
                         ) : esPropio ? (
                           <>
                             #{convocadoObj?.numero || jugadorObj?.numero} {jugadorObj?.nombre || 'Jugador del plantel'}
@@ -863,7 +873,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                 <span className="text-2xl">⚽</span>
                 <div className="text-left">
                   <span className="font-display font-bold text-sm text-[#3ddc84] block">
-                    Los Halcones FC (Propio)
+                    {nombreClub} (Propio)
                   </span>
                   <span className="text-[11px] text-[#9aa89f]">Córner a favor</span>
                 </div>
@@ -937,7 +947,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
                   }`}
                 >
-                  Los Halcones (Propio)
+                  {nombreClub} (Propio)
                 </button>
                 <button
                   type="button"
@@ -1285,7 +1295,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
             <div className="p-4 rounded-xl bg-[#0f1712] border border-[#243d2c] mb-6">
               <span className="text-xs text-[#9aa89f] block mb-1">Resultado Final</span>
               <div className="font-display font-bold text-3xl text-white">
-                Los Halcones <span className="text-[#3ddc84]">{golesPropio}</span> - <span className="text-[#ffb703]">{golesRival}</span> {draft.partido.rival}
+                {nombreClub} <span className="text-[#3ddc84]">{golesPropio}</span> - <span className="text-[#ffb703]">{golesRival}</span> {draft.partido.rival}
               </div>
             </div>
 

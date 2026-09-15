@@ -26,7 +26,9 @@ import {
   CheckCircle2,
   Check,
   X,
-  Calculator
+  Calculator,
+  Tag,
+  AlertTriangle
 } from 'lucide-react';
 import { Partido, Jugador, Convocado, RivalJugador, Incidencia, RolUsuario, TipoIncidencia, EquipoIncidencia } from '../types';
 import { calcularMinutosPartido, getPosicionBadge } from '../utils/footballCalculations';
@@ -42,6 +44,9 @@ interface PartidoDetalleViewProps {
   rol?: RolUsuario;
   onActualizarPartido?: () => void;
   onVolver: () => void;
+  onEliminarPartido?: () => void;
+  nombreEquipo?: string;
+  colorPropio?: string;
 }
 
 export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
@@ -52,9 +57,33 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   jugadores,
   rol,
   onActualizarPartido,
-  onVolver
+  onVolver,
+  onEliminarPartido,
+  nombreEquipo,
+  colorPropio
 }) => {
   const esEditor = rol === 'editor';
+  const nombreClub = nombreEquipo || StorageService.getNombreEquipo();
+  const colorClub = colorPropio || StorageService.getColorPropio();
+
+  const [modalEliminarPartido, setModalEliminarPartido] = useState(false);
+  const [borrandoPartido, setBorrandoPartido] = useState(false);
+
+  const handleConfirmarEliminarPartido = async () => {
+    setBorrandoPartido(true);
+    try {
+      await ApiService.eliminarPartido(partido.id);
+      setModalEliminarPartido(false);
+      if (onEliminarPartido) {
+        onEliminarPartido();
+      } else {
+        onVolver();
+      }
+    } finally {
+      setBorrandoPartido(false);
+    }
+  };
+
   const [modoEdicion, setModoEdicion] = useState(false);
   const [partidoEditado, setPartidoEditado] = useState<Partido>(partido);
   const [incidenciasLocales, setIncidenciasLocales] = useState<Incidencia[]>(incidencias);
@@ -323,6 +352,15 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                 Cambios guardados con éxito
               </span>
             )}
+
+            <button
+              onClick={() => setModalEliminarPartido(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0f1712] border border-[#e63946]/40 text-[#e63946] hover:bg-[#e63946]/20 text-xs font-bold transition-all cursor-pointer shadow-sm"
+              title="Borrar este partido permanentemente"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Borrar Partido
+            </button>
             
             <button
               onClick={() => setModoEdicion(!modoEdicion)}
@@ -366,6 +404,19 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
             </div>
 
             <div>
+              <label className="text-[11px] font-bold text-[#9aa89f] block mb-1 uppercase flex items-center gap-1">
+                <Tag className="w-3 h-3 text-[#3ddc84]" /> Etiqueta / Instancia
+              </label>
+              <input 
+                type="text" 
+                value={partidoEditado.etiqueta || ''}
+                onChange={e => setPartidoEditado({ ...partidoEditado, etiqueta: e.target.value })}
+                placeholder="Ej: Fecha 1, Semifinal, Amistoso"
+                className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#3ddc84]"
+              />
+            </div>
+
+            <div>
               <label className="text-[11px] font-bold text-[#9aa89f] block mb-1 uppercase">Fecha</label>
               <input 
                 type="date" 
@@ -399,7 +450,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
             </div>
 
             <div>
-              <label className="text-[11px] font-bold text-[#9aa89f] block mb-1 uppercase">Goles Halcones</label>
+              <label className="text-[11px] font-bold text-[#9aa89f] block mb-1 uppercase">Goles {nombreClub}</label>
               <input 
                 type="number" 
                 min={0}
@@ -480,15 +531,36 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
 
       {/* Tarjeta de Marcador Principal */}
       <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+        {/* Etiqueta / Torneo Badge */}
+        {(partidoEditado.etiqueta || partidoEditado.torneo_nombre) && (
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            {partidoEditado.etiqueta && (
+              <span className="text-xs font-bold px-3 py-1 rounded-full bg-[#3ddc84]/15 text-[#3ddc84] border border-[#3ddc84]/30 inline-flex items-center gap-1.5 shadow-sm">
+                <Tag className="w-3.5 h-3.5 text-[#3ddc84]" />
+                {partidoEditado.etiqueta}
+              </span>
+            )}
+            {partidoEditado.torneo_nombre && (
+              <span className="text-xs font-bold px-3 py-1 rounded-full bg-[#ffb703]/15 text-[#ffb703] border border-[#ffb703]/30 inline-flex items-center gap-1.5 shadow-sm">
+                <Trophy className="w-3.5 h-3.5 text-[#ffb703]" />
+                {partidoEditado.torneo_nombre}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           
-          {/* Los Halcones */}
+          {/* Equipo Propio */}
           <div className="text-center md:text-left flex-1">
-            <span className="text-xs font-bold text-[#3ddc84] uppercase tracking-wider block mb-1">
-              Los Halcones FC ({partidoEditado.condicion})
+            <span 
+              className="text-xs font-bold uppercase tracking-wider block mb-1"
+              style={{ color: colorClub }}
+            >
+              {nombreClub} ({partidoEditado.condicion})
             </span>
             <h2 className="font-display font-bold text-2xl sm:text-3xl text-white">
-              Los Halcones
+              {nombreClub}
             </h2>
           </div>
 
@@ -537,6 +609,13 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
             <Clock className="w-4 h-4 text-zinc-400" />
             <span>Duración total jugada: <strong className="text-white">{duracionTotalMin} min</strong></span>
           </div>
+
+          {partidoEditado.etiqueta && (
+            <div className="flex items-center gap-1.5 text-[#3ddc84]">
+              <Tag className="w-4 h-4" />
+              <span>Instancia: <strong className="text-white">{partidoEditado.etiqueta}</strong></span>
+            </div>
+          )}
         </div>
 
       </div>
@@ -835,7 +914,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                         <span className={`text-[9px] font-semibold px-1 rounded ${
                           esPropio ? 'text-[#3ddc84]' : 'text-[#ffb703]'
                         }`}>
-                          {esPropio ? 'Halcones' : 'Rival'}
+                          {esPropio ? nombreClub : 'Rival'}
                         </span>
                       </div>
 
@@ -846,7 +925,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                             Entra: #{convocadoSecObj?.numero || jugSec?.numero} {jugSec?.nombre || 'Jugador'}
                           </>
                         ) : inc.tipo === 'corner' ? (
-                          <>Córner para {esPropio ? 'Los Halcones FC' : partidoEditado.rival}</>
+                          <>Córner para {esPropio ? nombreClub : partidoEditado.rival}</>
                         ) : esPropio ? (
                           <>
                             #{convocadoObj?.numero || jug?.numero} {jug?.nombre || 'Jugador del plantel'}
@@ -983,7 +1062,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                     onChange={e => setNuevaEquipo(e.target.value as EquipoIncidencia)}
                     className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
                   >
-                    <option value="propio">Halcones FC</option>
+                    <option value="propio">{nombreClub}</option>
                     <option value="rival">Rival ({partidoEditado.rival})</option>
                   </select>
                 </div>
@@ -993,7 +1072,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
               {nuevaEquipo === 'propio' ? (
                 <div>
                   <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
-                    {nuevaTipo === 'cambio' ? 'Jugador que SALE' : 'Jugador Halcones'}
+                    {nuevaTipo === 'cambio' ? 'Jugador que SALE' : `Jugador ${nombreClub}`}
                   </label>
                   <select
                     value={nuevaJugadorId}
@@ -1137,7 +1216,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
               </div>
               <p className="text-[#9aa89f]">
                 Equipo: <strong className={incidenciaAEliminar.equipo === 'propio' ? 'text-[#3ddc84]' : 'text-[#ffb703]'}>
-                  {incidenciaAEliminar.equipo === 'propio' ? 'Los Halcones' : 'Rival'}
+                  {incidenciaAEliminar.equipo === 'propio' ? nombreClub : 'Rival'}
                 </strong>
               </p>
               {incidenciaAEliminar.tipo === 'gol' && (
@@ -1254,7 +1333,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                     onChange={e => setEditEquipo(e.target.value as EquipoIncidencia)}
                     className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
                   >
-                    <option value="propio">⚽ Los Halcones</option>
+                    <option value="propio">⚽ {nombreClub}</option>
                     <option value="rival">🛡️ Equipo Rival</option>
                   </select>
                 </div>
@@ -1272,7 +1351,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                     className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
                     required={editTipo !== 'corner'}
                   >
-                    <option value="">-- Seleccionar jugador de Halcones --</option>
+                    <option value="">-- Seleccionar jugador de {nombreClub} --</option>
                     {convocados.map(c => {
                       const j = jugadoresMap.get(c.jugador_id);
                       return (
@@ -1421,6 +1500,55 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Eliminar Definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmación Borrar Partido Completo */}
+      {modalEliminarPartido && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#182a1f] border border-[#e63946]/50 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-[#e63946]">
+              <div className="w-10 h-10 rounded-xl bg-[#e63946]/10 border border-[#e63946]/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-lg text-white">
+                  ¿Borrar este partido?
+                </h3>
+                <p className="text-xs text-[#9aa89f]">Esta acción eliminará la planilla, convocados y todas las incidencias asociadas.</p>
+                <p className="text-[11px] text-[#3ddc84] font-medium mt-0.5">Podrás deshacer esta acción inmediatamente usando el botón flotante.</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#0f1712] border border-[#243d2c] text-xs text-white space-y-1">
+              <div><strong className="text-[#9aa89f]">Partido:</strong> {nombreClub} vs {partidoEditado.rival}</div>
+              <div><strong className="text-[#9aa89f]">Fecha:</strong> {partidoEditado.fecha}</div>
+              {partidoEditado.etiqueta && (
+                <div><strong className="text-[#9aa89f]">Etiqueta:</strong> {partidoEditado.etiqueta}</div>
+              )}
+              <div><strong className="text-[#9aa89f]">Resultado:</strong> {partidoEditado.resultado_propio} - {partidoEditado.resultado_rival}</div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={borrandoPartido}
+                onClick={() => setModalEliminarPartido(false)}
+                className="px-4 py-2 bg-[#0f1712] border border-[#243d2c] text-[#9aa89f] hover:text-white rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={borrandoPartido}
+                onClick={handleConfirmarEliminarPartido}
+                className="px-4 py-2 bg-[#e63946] hover:bg-[#d92d3b] text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-lg shadow-[#e63946]/20"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {borrandoPartido ? 'Borrando...' : 'Sí, Borrar Partido Definitivamente'}
               </button>
             </div>
           </div>

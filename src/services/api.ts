@@ -5,7 +5,7 @@
  */
 
 import { StorageService } from './storage';
-import { Jugador, Partido, Convocado, RivalJugador, Incidencia, ItemColaSync, SesionAuth, RolUsuario } from '../types';
+import { Jugador, Partido, Convocado, RivalJugador, Incidencia, ItemColaSync, SesionAuth, RolUsuario, ClubConfig, AccionDeshacer } from '../types';
 
 export interface ApiResponse<T = any> {
   ok: boolean;
@@ -447,6 +447,135 @@ export const ApiService = {
   },
 
   /**
+   * Eliminar un partido tanto localmente como en el backend Google Sheets
+   */
+  async eliminarPartido(partidoId: string): Promise<ApiResponse<string>> {
+    StorageService.eliminarPartido(partidoId);
+    const res = await ApiService.request<string>('eliminarPartido', { partido_id: partidoId, id: partidoId });
+    if (!res.ok && res.offline) {
+      StorageService.agregarAColaSync('eliminarPartido', { partido_id: partidoId });
+    }
+    return { ok: true, data: 'Partido eliminado', offline: res.offline };
+  },
+
+  /**
+   * Guardar la configuración del club (nombre, colores) en local y en Google Sheets
+   */
+  async guardarClubConfig(config: ClubConfig): Promise<ApiResponse<ClubConfig>> {
+    StorageService.saveClubConfig(config);
+    const res = await ApiService.request<ClubConfig>('guardarConfiguracion', { config, clubConfig: config });
+    if (!res.ok && res.offline) {
+      StorageService.agregarAColaSync('guardarConfiguracion', { config, clubConfig: config });
+    }
+    return { ok: true, data: config, offline: res.offline };
+  },
+
+  /**
+   * Eliminar un torneo local y remotamente, eliminando en cascada todos sus partidos asociados
+   */
+  async eliminarTorneo(torneoId: string): Promise<ApiResponse<string>> {
+    const torneo = StorageService.getTorneos().find(t => t.id === torneoId);
+    const partidosDelTorneo = StorageService.getPartidos().filter(
+      p => p.torneo_id === torneoId || (torneo && p.torneo_nombre === torneo.nombre)
+    );
+
+    // 1. Eliminar localmente en cascada con respaldo para Deshacer
+    StorageService.eliminarTorneo(torneoId);
+
+    // 2. Notificar la eliminación del torneo a Google Sheets
+    const res = await ApiService.request<string>('eliminarTorneo', { torneo_id: torneoId, id: torneoId });
+    if (!res.ok && res.offline) {
+      StorageService.agregarAColaSync('eliminarTorneo', { torneo_id: torneoId });
+    }
+
+    // 3. Notificar la eliminación de cada partido de ese torneo
+    for (const p of partidosDelTorneo) {
+      const resP = await ApiService.request<string>('eliminarPartido', { partido_id: p.id, id: p.id }).catch(() => ({ ok: false, offline: true }));
+      if (!resP.ok && resP.offline) {
+        StorageService.agregarAColaSync('eliminarPartido', { partido_id: p.id });
+      }
+    }
+
+    return { ok: true, data: 'Torneo y partidos eliminados', offline: res.offline };
+  },
+
+  /**
+   * Restaurar acción de borrado en memoria (Undo de partido o torneo)
+   */
+  async restaurarAccionDeshacer(accion: AccionDeshacer): Promise<void> {
+    // 1. Restaurar torneo si existe
+    if (accion.datos.torneo) {
+      const torneos = StorageService.getTorneos();
+      if (!torneos.some(t => t.id === accion.datos.torneo!.id)) {
+        torneos.push(accion.datos.torneo);
+        StorageService.saveTorneos(torneos);
+      }
+    }
+
+    // 2. Restaurar partidos
+    const partidosActuales = StorageService.getPartidos();
+    const nuevosPartidos = [...partidosActuales];
+    for (const p of accion.datos.partidos) {
+      if (!nuevosPartidos.some(x => x.id === p.id)) {
+        nuevosPartidos.push(p);
+      }
+    }
+    StorageService.savePartidos(nuevosPartidos);
+
+    // 3. Restaurar convocados
+    const convocadosActuales = StorageService.getConvocados();
+    const nuevosConvocados = [...convocadosActuales];
+    for (const c of accion.datos.convocados) {
+      if (!nuevosConvocados.some(x => x.id === c.id)) {
+        nuevosConvocados.push(c);
+      }
+    }
+    StorageService.saveConvocados(nuevosConvocados);
+
+    // 4. Restaurar rivales
+    const rivalesActuales = StorageService.getRivales();
+    const nuevosRivales = [...rivalesActuales];
+    for (const r of accion.datos.rivales) {
+      if (!nuevosRivales.some(x => x.id === r.id)) {
+        nuevosRivales.push(r);
+      }
+    }
+    StorageService.saveRivales(nuevosRivales);
+
+    // 5. Restaurar incidencias
+    const incidenciasActuales = StorageService.getIncidencias();
+    const nuevasIncidencias = [...incidenciasActuales];
+    for (const inc of accion.datos.incidencias) {
+      if (!nuevasIncidencias.some(x => x.id === inc.id)) {
+        nuevasIncidencias.push(inc);
+      }
+    }
+    StorageService.saveIncidencias(nuevasIncidencias);
+
+    // 6. Limpiar acciones de borrado de la cola de sync pendientes
+    const idsPartidos = new Set(accion.datos.partidos.map(p => p.id));
+    const cola = StorageService.getColaSync().filter(item => {
+      if (item.accion === 'eliminarPartido' && item.payload?.partido_id && idsPartidos.has(item.payload.partido_id)) {
+        return false;
+      }
+      if (item.accion === 'eliminarTorneo' && accion.datos.torneo && item.payload?.torneo_id === accion.datos.torneo.id) {
+        return false;
+      }
+      return true;
+    });
+    StorageService.saveColaSync(cola);
+
+    // 7. Limpiar memoria de deshacer
+    StorageService.limpiarAccionDeshacer();
+
+    // 8. Disparar eventos globales de actualización
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('futbol11-datos-actualizados'));
+      window.dispatchEvent(new CustomEvent('futbol11-deshacer-actualizado'));
+    }
+  },
+
+  /**
    * Sincroniza TODOS los datos vigentes en la aplicación hacia Google Sheets:
    * Plantel (jugadores), historial de partidos, convocados, rivales e incidencias.
    *
@@ -482,6 +611,7 @@ export const ApiService = {
     const convocados = StorageService.getConvocados();
     const rivales = StorageService.getRivales();
     const incidencias = StorageService.getIncidencias();
+    const clubConfig = StorageService.getClubConfig();
 
     onProgreso?.('Preparando datos para sincronización...', 10);
 
@@ -493,7 +623,9 @@ export const ApiService = {
         partidos,
         convocados,
         rivales,
-        incidencias
+        incidencias,
+        clubConfig,
+        config: clubConfig
       });
 
       if (resBulk.ok && resBulk.data) {
@@ -608,6 +740,13 @@ export const ApiService = {
       }
       if (Array.isArray(data.incidencias) && data.incidencias.length > 0) {
         StorageService.saveIncidencias(data.incidencias);
+      }
+      if (data.configuracion && typeof data.configuracion === 'object' && data.configuracion.nombre) {
+        StorageService.saveClubConfig({
+          nombre: data.configuracion.nombre,
+          colorPropio: data.configuracion.colorPropio || '#3ddc84',
+          colorRival: data.configuracion.colorRival || '#e63946'
+        });
       }
       onProgreso?.('¡Datos descargados con éxito!', 100);
       return {

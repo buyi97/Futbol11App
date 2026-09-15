@@ -16,7 +16,8 @@ import {
   ItemColaSync,
   ClubConfig,
   Torneo,
-  TipoTorneo
+  TipoTorneo,
+  AccionDeshacer
 } from '../types';
 import {
   JUGADORES_INICIALES,
@@ -39,7 +40,9 @@ const KEYS = {
   COLA_SYNC: 'futbol11_cola_sync',
   CONFIG: 'futbol11_config',
   CLUB_CONFIG: 'futbol11_club_config',
-  TORNEOS: 'futbol11_torneos'
+  TORNEOS: 'futbol11_torneos',
+  SEEDED: 'futbol11_datos_inicializados_v1',
+  MEMORIA_DESHACER: 'futbol11_memoria_deshacer'
 };
 
 export const DEFAULT_CLUB_CONFIG: ClubConfig = {
@@ -243,9 +246,19 @@ export const StorageService = {
   getPartidos(): Partido[] {
     try {
       const data = localStorage.getItem(KEYS.PARTIDOS);
-      return data ? JSON.parse(data) : PARTIDOS_INICIALES;
+      if (data !== null) {
+        return JSON.parse(data);
+      }
+      // Solo inicializar con datos de prueba si nunca se ha inicializado la base local
+      const seeded = localStorage.getItem(KEYS.SEEDED);
+      if (!seeded) {
+        localStorage.setItem(KEYS.SEEDED, 'true');
+        localStorage.setItem(KEYS.PARTIDOS, JSON.stringify(PARTIDOS_INICIALES));
+        return PARTIDOS_INICIALES;
+      }
+      return [];
     } catch {
-      return PARTIDOS_INICIALES;
+      return [];
     }
   },
 
@@ -255,6 +268,7 @@ export const StorageService = {
 
   savePartidos(partidos: Partido[]): void {
     localStorage.setItem(KEYS.PARTIDOS, JSON.stringify(partidos));
+    localStorage.setItem(KEYS.SEEDED, 'true');
   },
 
   savePartido(partido: Partido): void {
@@ -268,7 +282,27 @@ export const StorageService = {
     this.savePartidos(list);
   },
 
-  eliminarPartido(id: string): void {
+  eliminarPartido(id: string, guardarParaDeshacer: boolean = true): void {
+    const partido = this.getPartidos().find(p => p.id === id);
+    if (guardarParaDeshacer && partido) {
+      const convs = this.getConvocados().filter(c => c.partido_id === id);
+      const rivs = this.getRivales().filter(r => r.partido_id === id);
+      const incs = this.getIncidencias().filter(i => i.partido_id === id);
+      this.guardarAccionDeshacer({
+        id: 'deshacer-' + Date.now(),
+        tipo: 'partido',
+        titulo: `Partido vs ${partido.rival}`,
+        descripcion: `Marcador ${partido.resultado_propio} - ${partido.resultado_rival} (${partido.fecha})`,
+        timestamp: Date.now(),
+        datos: {
+          partidos: [partido],
+          convocados: convs,
+          rivales: rivs,
+          incidencias: incs
+        }
+      });
+    }
+
     const list = this.getPartidos().filter(p => p.id !== id);
     this.savePartidos(list);
 
@@ -288,6 +322,10 @@ export const StorageService = {
     const vivo = this.getPartidoEnVivo();
     if (vivo && vivo.partido.id === id) {
       this.clearPartidoEnVivo();
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('futbol11-datos-actualizados'));
     }
   },
 
@@ -405,6 +443,10 @@ export const StorageService = {
     localStorage.setItem(KEYS.COLA_SYNC, JSON.stringify(cola));
   },
 
+  saveColaSync(cola: ItemColaSync[]): void {
+    this.actualizarColaSync(cola);
+  },
+
   limpiarColaSync(): void {
     localStorage.setItem(KEYS.COLA_SYNC, JSON.stringify([]));
   },
@@ -433,6 +475,9 @@ export const StorageService = {
       ...config
     };
     localStorage.setItem(KEYS.CLUB_CONFIG, JSON.stringify(updated));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('club-config-changed', { detail: updated }));
+    }
     return updated;
   },
 
@@ -540,8 +585,85 @@ export const StorageService = {
     this.saveTorneos(list);
   },
 
-  eliminarTorneo(id: string): void {
-    const list = this.getTorneos().filter(t => t.id !== id);
-    this.saveTorneos(list);
+  eliminarTorneo(id: string, guardarParaDeshacer: boolean = true): void {
+    const torneo = this.getTorneos().find(t => t.id === id);
+    const todosPartidos = this.getPartidos();
+    const partidosDelTorneo = todosPartidos.filter(p => p.torneo_id === id || (torneo && p.torneo_nombre === torneo.nombre));
+    const idsPartidos = new Set(partidosDelTorneo.map(p => p.id));
+
+    const convs = this.getConvocados().filter(c => idsPartidos.has(c.partido_id));
+    const rivs = this.getRivales().filter(r => idsPartidos.has(r.partido_id));
+    const incs = this.getIncidencias().filter(i => idsPartidos.has(i.partido_id));
+
+    if (guardarParaDeshacer && torneo) {
+      this.guardarAccionDeshacer({
+        id: 'deshacer-' + Date.now(),
+        tipo: 'torneo',
+        titulo: `Torneo ${torneo.nombre}`,
+        descripcion: `Eliminado con ${partidosDelTorneo.length} partidos asociados`,
+        timestamp: Date.now(),
+        datos: {
+          torneo,
+          partidos: partidosDelTorneo,
+          convocados: convs,
+          rivales: rivs,
+          incidencias: incs
+        }
+      });
+    }
+
+    // Eliminar el torneo
+    const listaTorneos = this.getTorneos().filter(t => t.id !== id);
+    this.saveTorneos(listaTorneos);
+
+    // Eliminar en cascada todos los partidos de ese torneo
+    const partidosRestantes = todosPartidos.filter(p => !idsPartidos.has(p.id));
+    this.savePartidos(partidosRestantes);
+
+    const convocadosRestantes = this.getConvocados().filter(c => !idsPartidos.has(c.partido_id));
+    this.saveConvocados(convocadosRestantes);
+
+    const rivalesRestantes = this.getRivales().filter(r => !idsPartidos.has(r.partido_id));
+    this.saveRivales(rivalesRestantes);
+
+    const incidenciasRestantes = this.getIncidencias().filter(i => !idsPartidos.has(i.partido_id));
+    this.saveIncidencias(incidenciasRestantes);
+
+    const vivo = this.getPartidoEnVivo();
+    if (vivo && idsPartidos.has(vivo.partido.id)) {
+      this.clearPartidoEnVivo();
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('futbol11-datos-actualizados'));
+    }
+  },
+
+  // --- Memoria para Deshacer (Undo) ---
+  getAccionDeshacer(): AccionDeshacer | null {
+    try {
+      const data = localStorage.getItem(KEYS.MEMORIA_DESHACER);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  guardarAccionDeshacer(accion: AccionDeshacer): void {
+    try {
+      localStorage.setItem(KEYS.MEMORIA_DESHACER, JSON.stringify(accion));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('futbol11-deshacer-actualizado'));
+      }
+    } catch (e) {
+      console.error('Error guardando acción para deshacer:', e);
+    }
+  },
+
+  limpiarAccionDeshacer(): void {
+    localStorage.removeItem(KEYS.MEMORIA_DESHACER);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('futbol11-deshacer-actualizado'));
+    }
   }
 };

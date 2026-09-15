@@ -21,17 +21,26 @@ import { Jugador, PosicionJugador, RolUsuario } from '../types';
 import { getPosicionBadge } from '../utils/footballCalculations';
 import { ApiService } from '../services/api';
 
+import { StorageService } from '../services/storage';
+
 interface PlantelViewProps {
   jugadores: Jugador[];
   onActualizarJugadores: () => void;
   rol: RolUsuario;
+  nombreEquipo?: string;
+  colorPropio?: string;
 }
 
 export const PlantelView: React.FC<PlantelViewProps> = ({
   jugadores,
   onActualizarJugadores,
-  rol
+  rol,
+  nombreEquipo,
+  colorPropio
 }) => {
+  const nombreClub = nombreEquipo || StorageService.getNombreEquipo();
+  const colorClub = colorPropio || StorageService.getColorPropio();
+
   const [busqueda, setBusqueda] = useState('');
   const [filtroPosicion, setFiltroPosicion] = useState<string>('todas');
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'activos' | 'inactivos'>('activos');
@@ -122,7 +131,7 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-[#9aa89f] mt-0.5">
-            Jugadores registrados para Los Halcones FC ({jugadores.filter(j => j.activo).length} activos). Los dorsales se asignan para cada partido.
+            Jugadores registrados para {nombreClub} ({jugadores.filter(j => j.activo).length} activos). Los dorsales se asignan para cada partido.
           </p>
         </div>
 

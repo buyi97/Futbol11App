@@ -24,7 +24,7 @@ import {
   Activity,
   Calendar
 } from 'lucide-react';
-import { Jugador, Partido, Convocado, Incidencia, EstadisticaJugador } from '../types';
+import { Jugador, Partido, Convocado, Incidencia, EstadisticaJugador, Torneo } from '../types';
 import { 
   calcularEstadisticasAcumuladas, 
   calcularResumenEquipo, 
@@ -38,6 +38,8 @@ interface EstadisticasViewProps {
   partidos: Partido[];
   convocados: Convocado[];
   incidencias: Incidencia[];
+  nombreEquipo?: string;
+  colorPropio?: string;
 }
 
 type CampoOrden = 
@@ -55,7 +57,9 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
   jugadores,
   partidos,
   convocados,
-  incidencias
+  incidencias,
+  nombreEquipo: nombreEquipoProp,
+  colorPropio: colorPropioProp
 }) => {
   const [busqueda, setBusqueda] = useState('');
   const [campoOrden, setCampoOrden] = useState<CampoOrden>('goles');
@@ -63,8 +67,18 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
   const [jugadorModalId, setJugadorModalId] = useState<string | null>(null);
   const [filtroTorneo, setFiltroTorneo] = useState<string>('todos');
 
-  const torneos = StorageService.getTorneos();
-  const nombreEquipo = StorageService.getNombreEquipo();
+  const [torneos, setTorneos] = useState<Torneo[]>(() => StorageService.getTorneos());
+  const nombreEquipo = nombreEquipoProp || StorageService.getNombreEquipo();
+
+  React.useEffect(() => {
+    const handleActualizar = () => {
+      setTorneos(StorageService.getTorneos());
+    };
+    window.addEventListener('futbol11-datos-actualizados', handleActualizar);
+    return () => {
+      window.removeEventListener('futbol11-datos-actualizados', handleActualizar);
+    };
+  }, []);
 
   // Filtrado por Torneo / Temporada
   const partidosFiltradosPorTorneo = filtroTorneo === 'todos'

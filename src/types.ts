@@ -200,8 +200,23 @@ export interface EventoPartidoJugador {
 
 export interface ItemColaSync {
   id: string;
-  accion: 'guardarIncidencia' | 'eliminarIncidencia' | 'finalizarPartido' | 'crearPartido' | 'guardarJugador';
+  accion: 'guardarIncidencia' | 'eliminarIncidencia' | 'finalizarPartido' | 'crearPartido' | 'guardarJugador' | 'eliminarPartido' | 'guardarConfiguracion' | 'eliminarTorneo';
   payload: any;
   timestamp: number;
   intentos: number;
+}
+
+export interface AccionDeshacer {
+  id: string;
+  tipo: 'partido' | 'torneo';
+  titulo: string;
+  descripcion: string;
+  timestamp: number;
+  datos: {
+    torneo?: Torneo;
+    partidos: Partido[];
+    convocados: Convocado[];
+    rivales: RivalJugador[];
+    incidencias: Incidencia[];
+  };
 }

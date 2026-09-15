@@ -32,6 +32,8 @@ interface DashboardViewProps {
   jugadores: Jugador[];
   incidencias: Incidencia[];
   onSeleccionarPartido: (partidoId: string) => void;
+  nombreEquipo?: string;
+  colorPropio?: string;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -40,8 +42,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   partidos,
   jugadores,
   incidencias,
-  onSeleccionarPartido
+  onSeleccionarPartido,
+  nombreEquipo,
+  colorPropio
 }) => {
+  const nombreClub = nombreEquipo || StorageService.getNombreEquipo();
+  const colorClub = colorPropio || StorageService.getColorPropio();
+  const torneoActivo = StorageService.getTorneoActivo();
+
   const resumen = calcularResumenEquipo(partidos, incidencias);
   const statsJugadores = calcularEstadisticasAcumuladas(
     jugadores, 
@@ -80,7 +88,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </span>
               </div>
               <h2 className="text-lg sm:text-xl font-bold font-display text-white mt-0.5">
-                Los Halcones {draftVivo.partido.resultado_propio} - {draftVivo.partido.resultado_rival} {draftVivo.partido.rival}
+                {nombreClub} {draftVivo.partido.resultado_propio} - {draftVivo.partido.resultado_rival} {draftVivo.partido.rival}
               </h2>
             </div>
           </div>
@@ -98,17 +106,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Hero Card del Equipo */}
       <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-[#3ddc84]/5 rounded-full blur-3xl pointer-events-none" />
+        <div 
+          className="absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl pointer-events-none opacity-20"
+          style={{ backgroundColor: colorClub }}
+        />
         
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-[#3ddc84] uppercase tracking-wider">
-                Temporada 2026 • Torneo Amateur F11
+              <span 
+                className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-md"
+                style={{ backgroundColor: `${colorClub}20`, color: colorClub }}
+              >
+                {torneoActivo ? `${torneoActivo.nombre} • Temporada ${torneoActivo.anio}` : 'Temporada 2026 • Torneo Amateur F11'}
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-white uppercase tracking-wide mt-1">
-              Los Halcones Fútbol Club
+              {nombreClub}
             </h1>
             <p className="text-sm text-[#9aa89f] mt-1 max-w-xl">
               Panel general de rendimiento, gestión de convocatorias, planillas oficiales y registro en vivo local-first.

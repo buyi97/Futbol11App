@@ -113,12 +113,16 @@ function doPost(e) {
     const requiereEditor = [
       'guardarJugador',
       'crearPartido',
+      'eliminarPartido',
       'guardarIncidencia',
       'eliminarIncidencia',
       'finalizarPartido',
       'inicializarHojas',
       'sincronizarTodo',
-      'sincronizarBaseCompleta'
+      'sincronizarBaseCompleta',
+      'guardarConfiguracion',
+      'guardarClubConfig',
+      'eliminarTorneo'
     ].indexOf(action) !== -1;
 
     if (requiereEditor && rol !== 'editor') {
@@ -182,7 +186,7 @@ function doPost(e) {
       const sheetPartidos = getOrCreateSheet_(ss, 'Partidos', [
         'id', 'fecha', 'rival', 'modo_rival', 'cancha', 'condicion',
         'resultado_propio', 'resultado_rival', 'agregado_1T', 'agregado_2T',
-        'duracion_tiempo_min', 'estado', 'creado_por'
+        'duracion_tiempo_min', 'estado', 'creado_por', 'etiqueta', 'torneo_id', 'torneo_nombre'
       ]);
 
       const partidoId = p.id || ('part-' + Utilities.getUuid().substring(0, 8));
@@ -199,7 +203,10 @@ function doPost(e) {
         Number(p.agregado_2T) || 0,
         Number(p.duracion_tiempo_min) || 40,
         p.estado || 'en_curso',
-        p.creado_por || 'Editor'
+        p.creado_por || 'Editor',
+        p.etiqueta || '',
+        p.torneo_id || '',
+        p.torneo_nombre || ''
       ];
       sheetPartidos.appendRow(partidoRow);
 
@@ -343,6 +350,59 @@ function doPost(e) {
       return jsonResponse_({ ok: false, error: 'Partido no encontrado' });
     }
 
+    // Endpoint: ELIMINAR PARTIDO
+    if (action === 'eliminarPartido') {
+      const pId = body.partido_id || body.id;
+      if (!pId) return jsonResponse_({ ok: false, error: 'Falta partido_id' });
+
+      const sheetPartidos = ss.getSheetByName('Partidos');
+      if (sheetPartidos) deleteRowById_(sheetPartidos, pId);
+
+      const sheetConv = ss.getSheetByName('Convocados');
+      if (sheetConv) deleteRowsByFieldValue_(sheetConv, 'partido_id', pId);
+
+      const sheetRiv = ss.getSheetByName('RivalesPartido');
+      if (sheetRiv) deleteRowsByFieldValue_(sheetRiv, 'partido_id', pId);
+
+      const sheetInc = ss.getSheetByName('Incidencias');
+      if (sheetInc) deleteRowsByFieldValue_(sheetInc, 'partido_id', pId);
+
+      return jsonResponse_({ ok: true, data: 'Partido y registros asociados eliminados' });
+    }
+
+    // Endpoint: GUARDAR CONFIGURACIÓN DEL CLUB (Nombre y colores)
+    if (action === 'guardarConfiguracion' || action === 'guardarClubConfig') {
+      const conf = body.config || body.clubConfig || {};
+      const sheetConf = getOrCreateSheet_(ss, 'Config', ['clave', 'valor']);
+      
+      const configMap = {
+        'nombre_equipo': conf.nombre || 'Los Halcones FC',
+        'color_propio': conf.colorPropio || '#3ddc84',
+        'color_rival': conf.colorRival || '#e63946',
+        'ultima_actualizacion': new Date().toISOString()
+      };
+
+      Object.keys(configMap).forEach(function(clave) {
+        const rowIdx = findRowIndexByKey_(sheetConf, clave);
+        if (rowIdx > 0) {
+          sheetConf.getRange(rowIdx, 2).setValue(configMap[clave]);
+        } else {
+          sheetConf.appendRow([clave, configMap[clave]]);
+        }
+      });
+
+      return jsonResponse_({ ok: true, data: conf });
+    }
+
+    // Endpoint: ELIMINAR TORNEO
+    if (action === 'eliminarTorneo') {
+      const tId = body.torneo_id || body.id;
+      if (!tId) return jsonResponse_({ ok: false, error: 'Falta torneo_id' });
+      const sheetTorneos = ss.getSheetByName('Torneos');
+      if (sheetTorneos) deleteRowById_(sheetTorneos, tId);
+      return jsonResponse_({ ok: true, data: 'Torneo eliminado' });
+    }
+
     // 6. Endpoint: SINCRONIZACIÓN COMPLETA (Batch / Lote de toda la base local)
     if (action === 'sincronizarTodo' || action === 'sincronizarBaseCompleta') {
       const jugadores = body.jugadores || body.plantel || [];
@@ -376,7 +436,7 @@ function doPost(e) {
         const sheetPart = getOrCreateSheet_(ss, 'Partidos', [
           'id', 'fecha', 'rival', 'modo_rival', 'cancha', 'condicion',
           'resultado_propio', 'resultado_rival', 'agregado_1T', 'agregado_2T',
-          'duracion_tiempo_min', 'estado', 'creado_por'
+          'duracion_tiempo_min', 'estado', 'creado_por', 'etiqueta', 'torneo_id', 'torneo_nombre'
         ]);
         countPart = guardarLoteConId_(sheetPart, partidos, function(p) {
           return [
@@ -392,7 +452,10 @@ function doPost(e) {
             Number(p.agregado_2T) || 0,
             Number(p.duracion_tiempo_min) || 40,
             p.estado || 'finalizado',
-            p.creado_por || 'Editor'
+            p.creado_por || 'Editor',
+            p.etiqueta || '',
+            p.torneo_id || '',
+            p.torneo_nombre || ''
           ];
         });
       }
@@ -455,6 +518,26 @@ function doPost(e) {
         });
       }
 
+      // 5. Guardar Configuración si viene en el payload
+      const conf = body.config || body.clubConfig;
+      if (conf) {
+        const sheetConf = getOrCreateSheet_(ss, 'Config', ['clave', 'valor']);
+        const configMap = {
+          'nombre_equipo': conf.nombre || 'Los Halcones FC',
+          'color_propio': conf.colorPropio || '#3ddc84',
+          'color_rival': conf.colorRival || '#e63946',
+          'ultima_actualizacion': new Date().toISOString()
+        };
+        Object.keys(configMap).forEach(function(clave) {
+          const rowIdx = findRowIndexByKey_(sheetConf, clave);
+          if (rowIdx > 0) {
+            sheetConf.getRange(rowIdx, 2).setValue(configMap[clave]);
+          } else {
+            sheetConf.appendRow([clave, configMap[clave]]);
+          }
+        });
+      }
+
       return jsonResponse_({
         ok: true,
         data: {
@@ -476,6 +559,23 @@ function doPost(e) {
       const sheetConv = ss.getSheetByName('Convocados');
       const sheetRiv = ss.getSheetByName('RivalesPartido');
       const sheetInc = ss.getSheetByName('Incidencias');
+      const sheetConf = ss.getSheetByName('Config');
+
+      let configObj = null;
+      if (sheetConf) {
+        const rowsConf = getSheetObjects_(sheetConf);
+        const mapConf = {};
+        rowsConf.forEach(function(r) {
+          if (r.clave) mapConf[r.clave] = r.valor;
+        });
+        if (mapConf['nombre_equipo']) {
+          configObj = {
+            nombre: mapConf['nombre_equipo'],
+            colorPropio: mapConf['color_propio'] || '#3ddc84',
+            colorRival: mapConf['color_rival'] || '#e63946'
+          };
+        }
+      }
 
       return jsonResponse_({
         ok: true,
@@ -484,7 +584,8 @@ function doPost(e) {
           partidos: sheetPart ? getSheetObjects_(sheetPart) : [],
           convocados: sheetConv ? getSheetObjects_(sheetConv) : [],
           rivales: sheetRiv ? getSheetObjects_(sheetRiv) : [],
-          incidencias: sheetInc ? getSheetObjects_(sheetInc) : []
+          incidencias: sheetInc ? getSheetObjects_(sheetInc) : [],
+          configuracion: configObj
         }
       });
     }
@@ -516,7 +617,7 @@ function inicializarEstructura_(ss) {
   getOrCreateSheet_(ss, 'Partidos', [
     'id', 'fecha', 'rival', 'modo_rival', 'cancha', 'condicion',
     'resultado_propio', 'resultado_rival', 'agregado_1T', 'agregado_2T',
-    'duracion_tiempo_min', 'estado', 'creado_por'
+    'duracion_tiempo_min', 'estado', 'creado_por', 'etiqueta', 'torneo_id', 'torneo_nombre'
   ]);
   getOrCreateSheet_(ss, 'Convocados', ['id', 'partido_id', 'jugador_id', 'titular']);
   getOrCreateSheet_(ss, 'RivalesPartido', ['id', 'partido_id', 'numero', 'nombre']);
@@ -631,4 +732,42 @@ function guardarLoteConId_(sheet, items, mapRowFn) {
   }
 
   return actualizados + toAppend.length;
+}
+
+function findRowIndexByKey_(sheet, key) {
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return -1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(key)) {
+      return i + 1;
+    }
+  }
+  return -1;
+}
+
+function deleteRowById_(sheet, id) {
+  const rowIdx = findRowIndexById_(sheet, id);
+  if (rowIdx > 0) {
+    sheet.deleteRow(rowIdx);
+    return true;
+  }
+  return false;
+}
+
+function deleteRowsByFieldValue_(sheet, fieldName, value) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return 0;
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const colIdx = headers.indexOf(fieldName) + 1;
+  if (colIdx <= 0) return 0;
+
+  const values = sheet.getRange(1, colIdx, lastRow, 1).getValues();
+  let deleted = 0;
+  for (let i = values.length - 1; i >= 1; i--) {
+    if (String(values[i][0]) === String(value)) {
+      sheet.deleteRow(i + 1);
+      deleted++;
+    }
+  }
+  return deleted;
 }

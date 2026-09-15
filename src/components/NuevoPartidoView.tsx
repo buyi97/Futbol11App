@@ -27,7 +27,8 @@ import {
   LayoutGrid,
   ArrowRightLeft,
   X,
-  Check
+  Check,
+  Tag
 } from 'lucide-react';
 import { 
   Jugador, 
@@ -68,6 +69,9 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   const torneos = StorageService.getTorneos();
   const nombreEquipo = StorageService.getNombreEquipo();
   const [torneoId, setTorneoId] = useState<string>(() => StorageService.getTorneoActivo()?.id || '');
+
+  const partidosExistentes = StorageService.getPartidos();
+  const [etiqueta, setEtiqueta] = useState<string>(() => `Fecha ${partidosExistentes.length + 1}`);
 
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [rival, setRival] = useState('');
@@ -355,7 +359,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     }
 
     if (ordenTitulares.length !== 11) {
-      setErrorValidacion(`Se requieren exactamente 11 titulares para Los Halcones (actualmente hay ${ordenTitulares.length}).`);
+      setErrorValidacion(`Se requieren exactamente 11 titulares para ${nombreEquipo} (actualmente hay ${ordenTitulares.length}).`);
       return;
     }
 
@@ -381,7 +385,8 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
       agregado_2T: 0,
       created_at: Date.now(),
       torneo_id: torneoElegido ? torneoElegido.id : undefined,
-      torneo_nombre: torneoElegido ? torneoElegido.nombre : undefined
+      torneo_nombre: torneoElegido ? torneoElegido.nombre : undefined,
+      etiqueta: etiqueta.trim() || undefined
     };
 
     // Convocados finales Halcones (titulares con posiciones x, y)
@@ -507,6 +512,40 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
               placeholder="Ej: Defensores del Norte"
               className="w-full px-3.5 py-2.5 bg-[#0f1712] border border-[#243d2c] rounded-xl text-sm text-white focus:outline-none focus:border-[#3ddc84]"
             />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-[#9aa89f] uppercase flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-[#3ddc84]" />
+                Etiqueta / Instancia
+              </label>
+              <span className="text-[10px] text-zinc-400">Ej: Fecha 1, Semifinal, Amistoso</span>
+            </div>
+            <input
+              type="text"
+              value={etiqueta}
+              onChange={(e) => setEtiqueta(e.target.value)}
+              placeholder="Ej: Fecha 1, Amistoso, Cuartos"
+              className="w-full px-3.5 py-2.5 bg-[#0f1712] border border-[#243d2c] rounded-xl text-sm text-white focus:outline-none focus:border-[#3ddc84]"
+            />
+            {/* Sugerencias rápidas de etiquetas */}
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {['Fecha 1', 'Fecha 2', 'Fecha 3', 'Fecha 4', 'Fecha 5', 'Amistoso', 'Octavos', 'Cuartos', 'Semifinal', 'Final'].map((sug) => (
+                <button
+                  key={sug}
+                  type="button"
+                  onClick={() => setEtiqueta(sug)}
+                  className={`text-[11px] px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${
+                    etiqueta === sug
+                      ? 'bg-[#3ddc84] text-[#0f1712] font-bold border-[#3ddc84]'
+                      : 'bg-[#0f1712] text-[#9aa89f] hover:text-white border-[#243d2c]'
+                  }`}
+                >
+                  {sug}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div>
@@ -760,10 +799,10 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
           ))}
         </div>
 
-        {/* Cancha Táctica Interactiva Halcones */}
+        {/* Cancha Táctica Interactiva Equipo Propio */}
         <div className="flex justify-center p-2 bg-[#0a110d] border border-[#243d2c]/60 rounded-2xl">
           <TacticaCancha
-            titulo={`Formación Los Halcones FC (${formacionPropia})`}
+            titulo={`Formación ${nombreEquipo} (${formacionPropia})`}
             jugadores={jugadoresCanchaPropia}
             suplentes={suplentesCanchaPropia}
             colorEquipo="verde"

@@ -15,6 +15,7 @@ import { HistorialView } from './components/HistorialView';
 import { PartidoDetalleView } from './components/PartidoDetalleView';
 import { EstadisticasView } from './components/EstadisticasView';
 import { ConfiguracionView } from './components/ConfiguracionView';
+import { FloatingUndoNotification } from './components/FloatingUndoNotification';
 
 import { StorageService } from './services/storage';
 import { ApiService } from './services/api';
@@ -39,42 +40,60 @@ export default function App() {
   // Estado de sincronización
   const [colaCount, setColaCount] = useState<number>(0);
   const [hayPartidoEnVivo, setHayPartidoEnVivo] = useState<boolean>(false);
+  const [nombreEquipo, setNombreEquipo] = useState<string>(() => StorageService.getNombreEquipo());
+  const [colorPropio, setColorPropio] = useState<string>(() => StorageService.getColorPropio());
 
   // Inicialización de datos
   const cargarDatosLocales = useCallback(() => {
-    // Si no hay jugadores en localStorage, cargar datos de demostración
+    // Si no hay jugadores en localStorage y no se ha inicializado, cargar datos iniciales
     let pLocal = StorageService.getPlantel();
-    if (pLocal.length === 0) {
+    if (pLocal.length === 0 && !localStorage.getItem('futbol11_datos_inicializados_v1')) {
       StorageService.savePlantel(MOCK_PLANTEL);
       pLocal = MOCK_PLANTEL;
     }
 
-    let partidosLocal = StorageService.getPartidos();
-    if (partidosLocal.length === 0) {
-      StorageService.savePartidos(MOCK_PARTIDOS);
-      partidosLocal = MOCK_PARTIDOS;
-    }
-
-    let convocadosLocal = StorageService.getConvocados();
-    if (convocadosLocal.length === 0) {
-      StorageService.saveConvocados(MOCK_CONVOCADOS);
-      convocadosLocal = MOCK_CONVOCADOS;
-    }
-
-    let incidenciasLocal = StorageService.getIncidencias();
-    if (incidenciasLocal.length === 0) {
-      StorageService.saveIncidencias(MOCK_INCIDENCIAS);
-      incidenciasLocal = MOCK_INCIDENCIAS;
-    }
+    const partidosLocal = StorageService.getPartidos();
+    const convocadosLocal = StorageService.getConvocados();
+    const rivalesLocal = StorageService.getRivales();
+    const incidenciasLocal = StorageService.getIncidencias();
 
     setPlantel(pLocal);
     setPartidos(partidosLocal);
     setConvocados(convocadosLocal);
-    setRivales(StorageService.getRivales());
+    setRivales(rivalesLocal);
     setIncidencias(incidenciasLocal);
     setColaCount(StorageService.getColaSync().length);
     setHayPartidoEnVivo(StorageService.getPartidoEnVivo() !== null);
+    setNombreEquipo(StorageService.getNombreEquipo());
+    setColorPropio(StorageService.getColorPropio());
   }, []);
+
+  useEffect(() => {
+    const handleClubConfigChange = () => {
+      setNombreEquipo(StorageService.getNombreEquipo());
+      setColorPropio(StorageService.getColorPropio());
+    };
+    window.addEventListener('club-config-changed', handleClubConfigChange);
+    return () => window.removeEventListener('club-config-changed', handleClubConfigChange);
+  }, []);
+
+  useEffect(() => {
+    const handleDatosActualizados = () => {
+      cargarDatosLocales();
+    };
+    window.addEventListener('futbol11-datos-actualizados', handleDatosActualizados);
+    return () => window.removeEventListener('futbol11-datos-actualizados', handleDatosActualizados);
+  }, [cargarDatosLocales]);
+
+  // Si se borra un partido que estaba abierto en vista detalle, volver al historial
+  useEffect(() => {
+    if (partidoSeleccionadoId && !partidos.some(p => p.id === partidoSeleccionadoId)) {
+      setPartidoSeleccionadoId(null);
+      if (vistaActual === 'partido-detalle') {
+        setVistaActual('historial');
+      }
+    }
+  }, [partidos, partidoSeleccionadoId, vistaActual]);
 
   useEffect(() => {
     cargarDatosLocales();
@@ -144,6 +163,8 @@ export default function App() {
         onLogout={handleLogout}
         colaSyncCount={colaCount}
         hayPartidoEnVivo={hayPartidoEnVivo}
+        nombreEquipo={nombreEquipo}
+        colorPropio={colorPropio}
       />
 
       {/* Contenido Dinámico de las Vistas */}
@@ -158,6 +179,8 @@ export default function App() {
             jugadores={plantel}
             incidencias={incidencias}
             onSeleccionarPartido={handleSeleccionarPartido}
+            nombreEquipo={nombreEquipo}
+            colorPropio={colorPropio}
           />
         )}
 
@@ -167,6 +190,8 @@ export default function App() {
             jugadores={plantel}
             onActualizarJugadores={cargarDatosLocales}
             rol={sesion.rol}
+            nombreEquipo={nombreEquipo}
+            colorPropio={colorPropio}
           />
         )}
 
@@ -191,6 +216,8 @@ export default function App() {
               handleSeleccionarPartido(partidoId);
             }}
             onVolver={() => setVistaActual('inicio')}
+            nombreEquipo={nombreEquipo}
+            colorPropio={colorPropio}
           />
         )}
 
@@ -207,6 +234,8 @@ export default function App() {
               handleSeleccionarPartido(id);
             }}
             hayPartidoEnVivo={hayPartidoEnVivo}
+            nombreEquipo={nombreEquipo}
+            colorPropio={colorPropio}
           />
         )}
 
@@ -220,7 +249,14 @@ export default function App() {
             jugadores={plantel}
             rol={sesion.rol}
             onActualizarPartido={cargarDatosLocales}
+            onEliminarPartido={() => {
+              cargarDatosLocales();
+              setPartidoSeleccionadoId(null);
+              setVistaActual('historial');
+            }}
             onVolver={() => setVistaActual('historial')}
+            nombreEquipo={StorageService.getNombreEquipo()}
+            colorPropio={StorageService.getColorPropio()}
           />
         )}
 
@@ -231,6 +267,8 @@ export default function App() {
             partidos={partidos}
             convocados={convocados}
             incidencias={incidencias}
+            nombreEquipo={nombreEquipo}
+            colorPropio={colorPropio}
           />
         )}
 
@@ -246,8 +284,11 @@ export default function App() {
 
       {/* Footer minimalista */}
       <footer className="border-t border-[#243d2c]/60 py-4 px-6 text-center text-xs text-zinc-500">
-        <span>{StorageService.getNombreEquipo()} • Gestión de Partidos Fútbol 11 Amateur • Arquitectura Local-First & Google Sheets</span>
+        <span>{nombreEquipo} • Gestión de Partidos Fútbol 11 Amateur • Arquitectura Local-First & Google Sheets</span>
       </footer>
+
+      {/* Botón flotante para Deshacer acciones de borrado en memoria */}
+      <FloatingUndoNotification onRestaurado={cargarDatosLocales} />
 
     </div>
   );

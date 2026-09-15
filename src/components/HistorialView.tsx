@@ -3,7 +3,7 @@
  * Listado histórico de partidos disputados y programados con filtros por resultado y fecha.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar, 
   Search, 
@@ -16,10 +16,14 @@ import {
   Plus,
   X,
   Check,
-  Users
+  Users,
+  Trash2,
+  Tag,
+  AlertTriangle
 } from 'lucide-react';
-import { Partido, Jugador, RolUsuario, Convocado, CondicionPartido } from '../types';
+import { Partido, Jugador, RolUsuario, Convocado, CondicionPartido, Torneo } from '../types';
 import { StorageService } from '../services/storage';
+import { ApiService } from '../services/api';
 
 interface HistorialViewProps {
   partidos: Partido[];
@@ -29,6 +33,9 @@ interface HistorialViewProps {
   onIrAPartidoVivo?: () => void;
   onPartidoCreado?: (partidoId: string) => void;
   hayPartidoEnVivo?: boolean;
+  onActualizarPartidos?: () => void;
+  nombreEquipo?: string;
+  colorPropio?: string;
 }
 
 export const HistorialView: React.FC<HistorialViewProps> = ({
@@ -38,11 +45,42 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
   onSeleccionarPartido,
   onIrAPartidoVivo,
   onPartidoCreado,
-  hayPartidoEnVivo
+  hayPartidoEnVivo,
+  onActualizarPartidos,
+  nombreEquipo,
+  colorPropio
 }) => {
   const esEditor = rol === 'editor';
-  const torneos = StorageService.getTorneos();
-  const nombreEquipo = StorageService.getNombreEquipo();
+  const [torneos, setTorneos] = useState<Torneo[]>(() => StorageService.getTorneos());
+  const nombreClub = nombreEquipo || StorageService.getNombreEquipo();
+
+  useEffect(() => {
+    const handleActualizar = () => {
+      setTorneos(StorageService.getTorneos());
+    };
+    window.addEventListener('futbol11-datos-actualizados', handleActualizar);
+    return () => {
+      window.removeEventListener('futbol11-datos-actualizados', handleActualizar);
+    };
+  }, []);
+
+  // Estado para confirmación de borrado de partido
+  const [partidoABorrar, setPartidoABorrar] = useState<Partido | null>(null);
+  const [borrando, setBorrando] = useState(false);
+
+  const handleConfirmarBorrarPartido = async () => {
+    if (!partidoABorrar) return;
+    setBorrando(true);
+    try {
+      await ApiService.eliminarPartido(partidoABorrar.id);
+      setPartidoABorrar(null);
+      if (onActualizarPartidos) {
+        onActualizarPartidos();
+      }
+    } finally {
+      setBorrando(false);
+    }
+  };
 
   const [busqueda, setBusqueda] = useState('');
   const [filtroResultado, setFiltroResultado] = useState<'todos' | 'victorias' | 'empates' | 'derrotas'>('todos');
@@ -52,7 +90,8 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
   const [modalRegistroPasado, setModalRegistroPasado] = useState(false);
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
   const [rival, setRival] = useState('');
-  const [cancha, setCancha] = useState(`Predio ${nombreEquipo}`);
+  const [etiquetaModal, setEtiquetaModal] = useState('Fecha 1');
+  const [cancha, setCancha] = useState(`Predio ${nombreClub}`);
   const [condicion, setCondicion] = useState<CondicionPartido>('local');
   const [torneoIdModal, setTorneoIdModal] = useState<string>(() => StorageService.getTorneoActivo()?.id || '');
   const [golesPropio, setGolesPropio] = useState<number>(0);
@@ -71,7 +110,8 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
     } else if (torneos.length > 0) {
       setTorneoIdModal(torneos[0].id);
     }
-    setCancha(`Predio ${StorageService.getNombreEquipo()}`);
+    setCancha(`Predio ${nombreClub}`);
+    setEtiquetaModal(`Fecha ${partidos.length + 1}`);
     setModalRegistroPasado(true);
   };
 
@@ -99,7 +139,8 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
       notas: notas.trim() || undefined,
       created_at: Date.now(),
       torneo_id: torneoElegido ? torneoElegido.id : undefined,
-      torneo_nombre: torneoElegido ? torneoElegido.nombre : undefined
+      torneo_nombre: torneoElegido ? torneoElegido.nombre : undefined,
+      etiqueta: etiquetaModal.trim() || undefined
     };
 
     // Crear convocados
@@ -275,6 +316,12 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
                       <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#0f1712] text-[#9aa89f] border border-[#243d2c] capitalize">
                         {partido.condicion}
                       </span>
+                      {partido.etiqueta && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#3ddc84]/15 text-[#3ddc84] border border-[#3ddc84]/30 flex items-center gap-1">
+                          <Tag className="w-3 h-3 text-[#3ddc84]" />
+                          {partido.etiqueta}
+                        </span>
+                      )}
                       {partido.torneo_nombre && (
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#ffb703]/15 text-[#ffb703] border border-[#ffb703]/30 flex items-center gap-1">
                           <Trophy className="w-3 h-3 text-[#ffb703]" />
@@ -315,8 +362,24 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="w-10 h-10 rounded-xl bg-[#0f1712] border border-[#243d2c] group-hover:border-[#3ddc84] flex items-center justify-center transition-colors">
-                    <ChevronRight className="w-5 h-5 text-[#9aa89f] group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                  <div className="flex items-center gap-2">
+                    {esEditor && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPartidoABorrar(partido);
+                        }}
+                        className="w-10 h-10 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#e63946] hover:bg-[#e63946]/20 text-[#9aa89f] hover:text-[#e63946] flex items-center justify-center transition-all cursor-pointer"
+                        title="Borrar partido del historial"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    <div className="w-10 h-10 rounded-xl bg-[#0f1712] border border-[#243d2c] group-hover:border-[#3ddc84] flex items-center justify-center transition-colors">
+                      <ChevronRight className="w-5 h-5 text-[#9aa89f] group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -413,23 +476,39 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
                 </div>
               </div>
 
-              {/* Asignación de Torneo / Temporada */}
-              <div>
-                <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
-                  Torneo / Temporada Asignada
-                </label>
-                <select
-                  value={torneoIdModal}
-                  onChange={e => setTorneoIdModal(e.target.value)}
-                  className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
-                >
-                  <option value="">(Sin Torneo / Partido Amistoso Libre)</option>
-                  {torneos.map(t => (
-                    <option key={t.id} value={t.id}>
-                      🏆 {t.nombre} {t.estado === 'activo' ? '🟢 (En curso)' : '🔒 (Cerrado)'}
-                    </option>
-                  ))}
-                </select>
+              {/* Asignación de Torneo / Temporada y Etiqueta */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                    Torneo / Temporada Asignada
+                  </label>
+                  <select
+                    value={torneoIdModal}
+                    onChange={e => setTorneoIdModal(e.target.value)}
+                    className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                  >
+                    <option value="">(Sin Torneo / Amistoso Libre)</option>
+                    {torneos.map(t => (
+                      <option key={t.id} value={t.id}>
+                        🏆 {t.nombre} {t.estado === 'activo' ? '🟢 (En curso)' : '🔒 (Cerrado)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1 flex items-center gap-1">
+                    <Tag className="w-3 h-3 text-[#3ddc84]" />
+                    Etiqueta / Instancia
+                  </label>
+                  <input
+                    type="text"
+                    value={etiquetaModal}
+                    onChange={e => setEtiquetaModal(e.target.value)}
+                    placeholder="Ej: Fecha 1, Semifinal, Amistoso"
+                    className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                  />
+                </div>
               </div>
 
               {/* Marcador Final */}
@@ -440,7 +519,7 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
                 <div className="flex items-center justify-center gap-4">
                   <div className="text-center">
                     <span className="text-[10px] text-[#3ddc84] font-bold block uppercase mb-1">
-                      {nombreEquipo}
+                      {nombreClub}
                     </span>
                     <input
                       type="number"
@@ -573,6 +652,55 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmación Borrar Partido */}
+      {partidoABorrar && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#182a1f] border border-[#e63946]/50 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-[#e63946]">
+              <div className="w-10 h-10 rounded-xl bg-[#e63946]/10 border border-[#e63946]/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-lg text-white">
+                  ¿Borrar este partido?
+                </h3>
+                <p className="text-xs text-[#9aa89f]">Esta acción eliminará la planilla y sus estadísticas.</p>
+                <p className="text-[11px] text-[#3ddc84] font-medium mt-0.5">Podrás deshacer esta acción si te equivocás desde el botón flotante.</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-[#0f1712] border border-[#243d2c] text-xs text-white space-y-1">
+              <div><strong className="text-[#9aa89f]">Partido:</strong> vs {partidoABorrar.rival}</div>
+              <div><strong className="text-[#9aa89f]">Fecha:</strong> {partidoABorrar.fecha}</div>
+              {partidoABorrar.etiqueta && (
+                <div><strong className="text-[#9aa89f]">Etiqueta:</strong> {partidoABorrar.etiqueta}</div>
+              )}
+              <div><strong className="text-[#9aa89f]">Resultado:</strong> {partidoABorrar.resultado_propio} - {partidoABorrar.resultado_rival}</div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={borrando}
+                onClick={() => setPartidoABorrar(null)}
+                className="px-4 py-2 bg-[#0f1712] border border-[#243d2c] text-[#9aa89f] hover:text-white rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={borrando}
+                onClick={handleConfirmarBorrarPartido}
+                className="px-4 py-2 bg-[#e63946] hover:bg-[#d92d3b] text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-lg shadow-[#e63946]/20"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {borrando ? 'Borrando...' : 'Sí, Borrar Partido'}
+              </button>
+            </div>
           </div>
         </div>
       )}
