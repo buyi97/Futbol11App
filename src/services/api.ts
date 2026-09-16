@@ -5,7 +5,7 @@
  */
 
 import { StorageService } from './storage';
-import { Jugador, Partido, Convocado, RivalJugador, Incidencia, ItemColaSync, SesionAuth, RolUsuario, ClubConfig, AccionDeshacer } from '../types';
+import { Jugador, Partido, Convocado, RivalJugador, Incidencia, ItemColaSync, SesionAuth, RolUsuario, ClubConfig, AccionDeshacer, Torneo } from '../types';
 
 export interface ApiResponse<T = any> {
   ok: boolean;

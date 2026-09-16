@@ -206,7 +206,7 @@ export interface EventoPartidoJugador {
 
 export interface ItemColaSync {
   id: string;
-  accion: 'guardarIncidencia' | 'eliminarIncidencia' | 'finalizarPartido' | 'crearPartido' | 'guardarJugador' | 'eliminarPartido' | 'guardarConfiguracion' | 'eliminarTorneo';
+  accion: 'guardarIncidencia' | 'eliminarIncidencia' | 'finalizarPartido' | 'crearPartido' | 'guardarJugador' | 'eliminarPartido' | 'guardarConfiguracion' | 'eliminarTorneo' | 'actualizarPartido' | 'guardarTorneo';
   payload: any;
   timestamp: number;
   intentos: number;
