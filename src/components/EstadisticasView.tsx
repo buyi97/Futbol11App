@@ -88,9 +88,18 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
   const stats = calcularEstadisticasAcumuladas(jugadores, partidosFiltradosPorTorneo, convocados, incidencias);
   const resumen = calcularResumenEquipo(partidosFiltradosPorTorneo, incidencias);
 
+  const jugadorPlantelMap = React.useMemo(() => {
+    const map = new Map<string, Jugador>();
+    jugadores.forEach(j => map.set(j.id, j));
+    return map;
+  }, [jugadores]);
+
   // Ordenamiento
   const statsOrdenadas = [...stats]
-    .filter(s => s.nombre.toLowerCase().includes(busqueda.toLowerCase()) || String(s.numero).includes(busqueda))
+    .filter(s => {
+      const numReal = jugadorPlantelMap.get(s.jugadorId)?.numero ?? s.numero;
+      return s.nombre.toLowerCase().includes(busqueda.toLowerCase()) || String(numReal).includes(busqueda);
+    })
     .sort((a, b) => {
       const valA = a[campoOrden];
       const valB = b[campoOrden];
@@ -458,7 +467,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                     <td className="sticky left-0 z-10 bg-[#182a1f] border-r border-[#243d2c]/80 py-2 sm:py-2.5 px-2 sm:px-3 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)]">
                       <div className="flex items-center gap-1.5 max-w-[100px] sm:max-w-none">
                         <span className="font-display font-bold text-xs sm:text-sm text-[#3ddc84] shrink-0">
-                          #{j.numero}
+                          #{jugadorPlantelMap.get(j.jugadorId)?.numero !== undefined && jugadorPlantelMap.get(j.jugadorId)?.numero !== null ? jugadorPlantelMap.get(j.jugadorId)?.numero : (j.numero ?? '-')}
                         </span>
                         <span className="font-semibold text-white group-hover:text-[#3ddc84] transition-colors truncate text-xs">
                           {j.nombre}
@@ -544,7 +553,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
             {/* Cabecera del Jugador */}
             <div className="flex items-start gap-4 pb-4 border-b border-[#243d2c]">
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#243d2c] to-[#0f1712] border border-[#3ddc84]/40 flex items-center justify-center text-[#3ddc84] font-display font-bold text-2xl shrink-0 shadow-lg">
-                #{jugadorSeleccionado.numero || statsJugadorSeleccionado.numero}
+                #{jugadorSeleccionado.numero !== undefined && jugadorSeleccionado.numero !== null ? jugadorSeleccionado.numero : (statsJugadorSeleccionado?.numero ?? '-')}
               </div>
 
               <div className="flex-1">

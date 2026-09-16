@@ -61,6 +61,7 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
     setJugadorEnEdicion({
       id: '',
       nombre: '',
+      numero: undefined,
       posicion: 'Mediocampista',
       activo: true,
       fecha_alta: new Date().toISOString().split('T')[0]
@@ -88,6 +89,7 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
     const jugadorFinal: Jugador = {
       id: jugadorEnEdicion.id && jugadorEnEdicion.id !== '' ? jugadorEnEdicion.id : 'jug-' + Date.now().toString(36),
       nombre: jugadorEnEdicion.nombre.trim(),
+      numero: jugadorEnEdicion.numero !== undefined && jugadorEnEdicion.numero !== null && !isNaN(Number(jugadorEnEdicion.numero)) ? Number(jugadorEnEdicion.numero) : undefined,
       posicion: (jugadorEnEdicion.posicion as PosicionJugador) || 'Mediocampista',
       activo: jugadorEnEdicion.activo !== false,
       fecha_alta: jugadorEnEdicion.fecha_alta || new Date().toISOString().split('T')[0]
@@ -211,9 +213,14 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${badge.bg}`}>
-                      {badge.label}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-display font-bold text-xs text-[#3ddc84] bg-[#3ddc84]/15 border border-[#3ddc84]/30 px-2 py-0.5 rounded-md">
+                        #{jugador.numero !== undefined && jugador.numero !== null ? jugador.numero : '-'}
+                      </span>
+                      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${badge.bg}`}>
+                        {badge.label}
+                      </span>
+                    </div>
 
                     <span
                       className={`w-2 h-2 rounded-full ${
@@ -303,20 +310,37 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#9aa89f] uppercase mb-1.5">
-                  Posición Habitual
-                </label>
-                <select
-                  value={jugadorEnEdicion.posicion || 'Mediocampista'}
-                  onChange={(e) => setJugadorEnEdicion({ ...jugadorEnEdicion, posicion: e.target.value as PosicionJugador })}
-                  className="w-full px-3 py-2.5 bg-[#0f1712] border border-[#243d2c] rounded-xl text-sm text-white focus:outline-none focus:border-[#3ddc84]"
-                >
-                  <option value="Arquero">Arquero</option>
-                  <option value="Defensor">Defensor</option>
-                  <option value="Mediocampista">Mediocampista</option>
-                  <option value="Delantero">Delantero</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#9aa89f] uppercase mb-1.5">
+                    Dorsal / Camiseta
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    value={jugadorEnEdicion.numero !== undefined && jugadorEnEdicion.numero !== null ? jugadorEnEdicion.numero : ''}
+                    onChange={(e) => setJugadorEnEdicion({ ...jugadorEnEdicion, numero: e.target.value === '' ? undefined : Number(e.target.value) })}
+                    placeholder="Ej: 10"
+                    className="w-full px-3 py-2.5 bg-[#0f1712] border border-[#243d2c] rounded-xl text-sm text-white focus:outline-none focus:border-[#3ddc84]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#9aa89f] uppercase mb-1.5">
+                    Posición
+                  </label>
+                  <select
+                    value={jugadorEnEdicion.posicion || 'Mediocampista'}
+                    onChange={(e) => setJugadorEnEdicion({ ...jugadorEnEdicion, posicion: e.target.value as PosicionJugador })}
+                    className="w-full px-3 py-2.5 bg-[#0f1712] border border-[#243d2c] rounded-xl text-sm text-white focus:outline-none focus:border-[#3ddc84]"
+                  >
+                    <option value="Arquero">Arquero</option>
+                    <option value="Defensor">Defensor</option>
+                    <option value="Mediocampista">Mediocampista</option>
+                    <option value="Delantero">Delantero</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 pt-2">

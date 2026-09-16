@@ -10,6 +10,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, 
+  ArrowRight,
   Calendar, 
   MapPin, 
   Clock, 
@@ -30,7 +31,7 @@ import {
   Tag,
   AlertTriangle
 } from 'lucide-react';
-import { Partido, Jugador, Convocado, RivalJugador, Incidencia, RolUsuario, TipoIncidencia, EquipoIncidencia } from '../types';
+import { Partido, Jugador, Convocado, RivalJugador, Incidencia, RolUsuario, TipoIncidencia, EquipoIncidencia, Torneo } from '../types';
 import { calcularMinutosPartido, getPosicionBadge } from '../utils/footballCalculations';
 import { StorageService } from '../services/storage';
 import { ApiService } from '../services/api';
@@ -88,6 +89,17 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   const [partidoEditado, setPartidoEditado] = useState<Partido>(partido);
   const [incidenciasLocales, setIncidenciasLocales] = useState<Incidencia[]>(incidencias);
   const [guardadoExitoso, setGuardadoExitoso] = useState(false);
+  const [torneos, setTorneos] = useState<Torneo[]>(() => StorageService.getTorneos());
+
+  useEffect(() => {
+    const handleActualizar = () => {
+      setTorneos(StorageService.getTorneos());
+    };
+    window.addEventListener('futbol11-datos-actualizados', handleActualizar);
+    return () => {
+      window.removeEventListener('futbol11-datos-actualizados', handleActualizar);
+    };
+  }, []);
 
   // Modal para agregar incidencia manual
   const [modalNuevaIncidencia, setModalNuevaIncidencia] = useState(false);
@@ -129,6 +141,143 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   });
 
   const jugadoresMap = new Map<string, Jugador>(jugadores.map(j => [j.id, j]));
+  const convocadosMap = new Map<string, Convocado>(convocados.map(c => [c.jugador_id, c]));
+
+  // Incidencias principales para el encabezado (Goles, Tarjetas, Cambios) ordenadas cronológicamente
+  const incidenciasPrincipales = React.useMemo(() => {
+    return [...incidenciasLocales]
+      .filter(i => 
+        i.tipo === 'gol' || 
+        i.tipo === 'autogol' || 
+        i.tipo === 'amarilla' || 
+        i.tipo === 'doble_amarilla' || 
+        i.tipo === 'roja_directa' || 
+        i.tipo === 'cambio'
+      )
+      .sort((a, b) => {
+        const tA = (a.tiempo || 1) * 1000 + (a.minuto || 0);
+        const tB = (b.tiempo || 1) * 1000 + (b.minuto || 0);
+        return tA - tB;
+      });
+  }, [incidenciasLocales]);
+
+  const esLocalPropio = partidoEditado.condicion !== 'visitante';
+  const esNeutral = partidoEditado.condicion === 'neutral';
+
+  const tituloColumnaLocal = esNeutral 
+    ? `${nombreClub} (Neutral)` 
+    : esLocalPropio 
+    ? `${nombreClub} (Local)` 
+    : `${partidoEditado.rival} (Local)`;
+
+  const tituloColumnaVisitante = esNeutral 
+    ? `${partidoEditado.rival} (Neutral)` 
+    : esLocalPropio 
+    ? `${partidoEditado.rival} (Visitante)` 
+    : `${nombreClub} (Visitante)`;
+
+  const colorColumnaLocal = (esNeutral || esLocalPropio) ? colorClub : '#ffb703';
+  const colorColumnaVisitante = (esNeutral || esLocalPropio) ? '#ffb703' : colorClub;
+
+  const incidenciasLocal = incidenciasPrincipales.filter(i => {
+    return (esNeutral || esLocalPropio) ? i.equipo === 'propio' : i.equipo === 'rival';
+  });
+
+  const incidenciasVisitante = incidenciasPrincipales.filter(i => {
+    return (esNeutral || esLocalPropio) ? i.equipo === 'rival' : i.equipo === 'propio';
+  });
+
+  const renderItemIncidenciaEncabezado = (inc: Incidencia) => {
+    const esPropio = inc.equipo === 'propio';
+    const conv = esPropio ? convocadosMap.get(inc.jugador_id || '') : undefined;
+    const jug = esPropio ? jugadoresMap.get(inc.jugador_id || '') : undefined;
+    const convSec = esPropio && inc.jugador_id_secundario ? convocadosMap.get(inc.jugador_id_secundario) : undefined;
+    const jugSec = esPropio && inc.jugador_id_secundario ? jugadoresMap.get(inc.jugador_id_secundario) : undefined;
+
+    const rivalObj = !esPropio ? rivales.find(r => r.id === inc.jugador_id || String(r.numero) === inc.jugador_id) : undefined;
+
+    let icono = '⚽';
+    let textoPrincipal = '';
+    let detalleSecundario = '';
+
+    if (inc.tipo === 'gol') {
+      icono = '⚽';
+      if (esPropio) {
+        const num = conv?.numero ?? jug?.numero;
+        const nombre = jug?.nombre || 'Jugador';
+        textoPrincipal = num ? `#${num} ${nombre}` : nombre;
+        if (convSec || jugSec) {
+          const numSec = convSec?.numero ?? jugSec?.numero;
+          const nomSec = jugSec?.nombre || '';
+          detalleSecundario = `Asist: ${numSec ? `#${numSec} ` : ''}${nomSec}`;
+        }
+      } else {
+        if (rivalObj?.nombre) {
+          textoPrincipal = `${rivalObj.nombre} (#${rivalObj.numero})`;
+        } else {
+          textoPrincipal = `Dorsal #${rivalObj?.numero || inc.jugador_id || ''} rival`;
+        }
+      }
+    } else if (inc.tipo === 'autogol') {
+      icono = '⚽🥅';
+      textoPrincipal = esPropio ? `Autogol #${conv?.numero ?? jug?.numero ?? ''} (e/c)` : 'Autogol rival (e/c)';
+    } else if (inc.tipo === 'amarilla') {
+      icono = '🟨';
+      if (esPropio) {
+        const num = conv?.numero ?? jug?.numero;
+        textoPrincipal = `${num ? `#${num} ` : ''}${jug?.nombre || 'Jugador'}`;
+      } else {
+        textoPrincipal = rivalObj?.nombre ? `${rivalObj.nombre} (#${rivalObj.numero})` : `Dorsal #${rivalObj?.numero || inc.jugador_id || ''}`;
+      }
+    } else if (inc.tipo === 'doble_amarilla') {
+      icono = '🟨🟥';
+      if (esPropio) {
+        const num = conv?.numero ?? jug?.numero;
+        textoPrincipal = `${num ? `#${num} ` : ''}${jug?.nombre || 'Jugador'} (Doble Amarilla)`;
+      } else {
+        textoPrincipal = `${rivalObj?.nombre ? rivalObj.nombre : `Dorsal #${rivalObj?.numero || inc.jugador_id || ''}`} (Doble Amarilla)`;
+      }
+    } else if (inc.tipo === 'roja_directa') {
+      icono = '🟥';
+      if (esPropio) {
+        const num = conv?.numero ?? jug?.numero;
+        textoPrincipal = `${num ? `#${num} ` : ''}${jug?.nombre || 'Jugador'} (Roja Directa)`;
+      } else {
+        textoPrincipal = `${rivalObj?.nombre ? rivalObj.nombre : `Dorsal #${rivalObj?.numero || inc.jugador_id || ''}`} (Roja Directa)`;
+      }
+    } else if (inc.tipo === 'cambio') {
+      icono = '🔄';
+      if (esPropio) {
+        const numSale = conv?.numero ?? jug?.numero;
+        const nomSale = jug?.nombre || 'Sale';
+        const numEntra = convSec?.numero ?? jugSec?.numero;
+        const nomEntra = jugSec?.nombre || 'Entra';
+        textoPrincipal = `Entra: ${numEntra ? `#${numEntra} ` : ''}${nomEntra}`;
+        detalleSecundario = `Sale: ${numSale ? `#${numSale} ` : ''}${nomSale}`;
+      } else {
+        textoPrincipal = inc.detalle || 'Cambio en equipo rival';
+      }
+    }
+
+    return (
+      <div key={inc.id} className="flex items-start gap-2 py-1.5 px-2.5 rounded-lg bg-[#0f1712]/75 border border-[#243d2c]/70 hover:border-[#3ddc84]/40 transition-colors">
+        <span className="font-mono font-bold text-[#3ddc84] text-[11px] shrink-0 mt-0.5 min-w-[28px]">
+          {inc.minuto}'
+        </span>
+        <span className="text-sm shrink-0 mt-0.5">{icono}</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] font-semibold text-white truncate leading-tight">
+            {textoPrincipal}
+          </div>
+          {detalleSecundario && (
+            <div className="text-[10px] text-[#9aa89f] truncate leading-tight mt-0.5">
+              {detalleSecundario}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // Métricas del partido basadas en las incidencias locales actuales
   const golesPropios = incidenciasLocales.filter(i => (i.tipo === 'gol' && i.equipo === 'propio') || (i.tipo === 'autogol' && i.equipo === 'rival')).length;
@@ -162,7 +311,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   };
 
   // Guardar modificaciones del partido
-  const handleGuardarCambios = () => {
+  const handleGuardarCambios = async () => {
     // 1. Guardar partido
     StorageService.savePartido(partidoEditado);
 
@@ -171,8 +320,13 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
     const nuevasTotales = [...todasLasIncidencias, ...incidenciasLocales];
     StorageService.saveIncidencias(nuevasTotales);
 
-    // 3. Encolar actualización para Google Sheets
+    // 3. Encolar y sincronizar actualización para Google Sheets
     StorageService.agregarAColaSync('crearPartido', partidoEditado);
+    try {
+      await ApiService.actualizarPartido(partidoEditado);
+    } catch (e) {
+      console.warn('Error al sincronizar partido modificado con Sheets:', e);
+    }
 
     setGuardadoExitoso(true);
     setTimeout(() => setGuardadoExitoso(false), 3000);
@@ -392,7 +546,38 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-[#9aa89f] block mb-1 uppercase flex items-center gap-1">
+                <Trophy className="w-3 h-3 text-[#ffb703]" /> Torneo
+              </label>
+              <select
+                value={partidoEditado.torneo_id || ''}
+                onChange={e => {
+                  const idSel = e.target.value;
+                  const tObj = torneos.find(t => t.id === idSel);
+                  setPartidoEditado({
+                    ...partidoEditado,
+                    torneo_id: idSel,
+                    torneo_nombre: tObj ? tObj.nombre : (partidoEditado.torneo_nombre || 'Amistosos')
+                  });
+                }}
+                className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#3ddc84]"
+              >
+                <option value="">-- Sin Torneo / Amistoso --</option>
+                {torneos.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre}
+                  </option>
+                ))}
+                {partidoEditado.torneo_id && !torneos.some(t => t.id === partidoEditado.torneo_id) && (
+                  <option value={partidoEditado.torneo_id}>
+                    {partidoEditado.torneo_nombre || partidoEditado.torneo_id}
+                  </option>
+                )}
+              </select>
+            </div>
+
             <div>
               <label className="text-[11px] font-bold text-[#9aa89f] block mb-1 uppercase">Rival</label>
               <input 
@@ -405,13 +590,13 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
 
             <div>
               <label className="text-[11px] font-bold text-[#9aa89f] block mb-1 uppercase flex items-center gap-1">
-                <Tag className="w-3 h-3 text-[#3ddc84]" /> Etiqueta / Instancia
+                <Tag className="w-3 h-3 text-[#3ddc84]" /> Instancia
               </label>
               <input 
                 type="text" 
                 value={partidoEditado.etiqueta || ''}
                 onChange={e => setPartidoEditado({ ...partidoEditado, etiqueta: e.target.value })}
-                placeholder="Ej: Fecha 1, Semifinal, Amistoso"
+                placeholder="Ej: Fecha 1, Semifinal"
                 className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#3ddc84]"
               />
             </div>
@@ -589,6 +774,55 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
             </h2>
           </div>
 
+        </div>
+
+        {/* Columnas de Incidencias Principales (Local a la izquierda, Visitante a la derecha) */}
+        <div className="mt-6 pt-4 border-t border-[#243d2c] grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Columna Izquierda: Local */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between border-b border-[#243d2c]/80 pb-1.5">
+              <span className="font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5" style={{ color: colorColumnaLocal }}>
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colorColumnaLocal }} />
+                {tituloColumnaLocal}
+              </span>
+              <span className="text-[10px] text-[#9aa89f] font-mono font-medium">
+                {incidenciasLocal.length} {incidenciasLocal.length === 1 ? 'incidencia' : 'incidencias'}
+              </span>
+            </div>
+
+            {incidenciasLocal.length === 0 ? (
+              <div className="py-2 text-[11px] text-zinc-500 italic">
+                Sin incidencias registradas
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {incidenciasLocal.map(renderItemIncidenciaEncabezado)}
+              </div>
+            )}
+          </div>
+
+          {/* Columna Derecha: Visitante */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between border-b border-[#243d2c]/80 pb-1.5">
+              <span className="font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5" style={{ color: colorColumnaVisitante }}>
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colorColumnaVisitante }} />
+                {tituloColumnaVisitante}
+              </span>
+              <span className="text-[10px] text-[#9aa89f] font-mono font-medium">
+                {incidenciasVisitante.length} {incidenciasVisitante.length === 1 ? 'incidencia' : 'incidencias'}
+              </span>
+            </div>
+
+            {incidenciasVisitante.length === 0 ? (
+              <div className="py-2 text-[11px] text-zinc-500 italic">
+                Sin incidencias registradas
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {incidenciasVisitante.map(renderItemIncidenciaEncabezado)}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Metadatos del Encuentro */}
@@ -786,7 +1020,40 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                           }`}>
                             {item.titular ? 'Titular' : 'Suplente'}
                           </span>
-                          {item.fueExpulsado && (
+                          {item.eventosTrayectoria && item.eventosTrayectoria.length > 0 && (
+                            <div className="flex items-center gap-1 flex-wrap mt-0.5 md:hidden">
+                              {item.eventosTrayectoria.map((ev, idx) => {
+                                if (ev.tipo === 'inicio') {
+                                  return <span key={idx} className="text-[9px] text-zinc-300 font-semibold">0'</span>;
+                                }
+                                if (ev.tipo === 'entrada') {
+                                  return (
+                                    <span key={idx} className="text-[9px] inline-flex items-center gap-0.5">
+                                      <ArrowRight className="w-2.5 h-2.5 text-zinc-400" />
+                                      <span className="text-[#3ddc84] font-bold">{ev.minuto}'</span>
+                                    </span>
+                                  );
+                                }
+                                if (ev.tipo === 'salida') {
+                                  return (
+                                    <span key={idx} className="text-[9px] inline-flex items-center gap-0.5">
+                                      <ArrowLeft className="w-2.5 h-2.5 text-zinc-400" />
+                                      <span className="text-[#e63946] font-bold">{ev.minuto}'</span>
+                                    </span>
+                                  );
+                                }
+                                if (ev.tipo === 'expulsion') {
+                                  return (
+                                    <span key={idx} className="text-[9px] inline-flex items-center gap-0.5 text-[#e63946] font-bold">
+                                      <span>🟥</span> {ev.minuto}'
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })}
+                            </div>
+                          )}
+                          {item.fueExpulsado && (!item.eventosTrayectoria || item.eventosTrayectoria.length === 0) && (
                             <span className="text-[9px] text-[#e63946] font-bold md:hidden flex items-center gap-0.5">
                               <span>🟥</span> Exp. {item.minutoSalida || item.minutoExpulsion}'
                             </span>
@@ -800,26 +1067,29 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                             {item.eventosTrayectoria.map((ev, idx) => {
                               if (ev.tipo === 'inicio') {
                                 return (
-                                  <span key={idx} className="font-semibold text-[#3ddc84] bg-[#3ddc84]/10 border border-[#3ddc84]/30 px-1.5 py-0.5 rounded text-[10px]" title="Titular desde el inicio">
+                                  <span key={idx} className="font-semibold text-zinc-300 bg-zinc-800/80 border border-zinc-700 px-1.5 py-0.5 rounded text-[10px]" title="Titular desde el inicio">
                                     0'
                                   </span>
                                 );
                               } else if (ev.tipo === 'entrada') {
                                 return (
-                                  <span key={idx} className="inline-flex items-center gap-0.5 text-[#3ddc84] bg-[#3ddc84]/10 border border-[#3ddc84]/30 px-1.5 py-0.5 rounded text-[10px]" title={`Ingresó a los ${ev.minuto}'`}>
-                                    <span className="text-xs">🟢</span> {ev.minuto}'
+                                  <span key={idx} className="inline-flex items-center gap-1 bg-[#182a1f] border border-[#243d2c] px-1.5 py-0.5 rounded text-[10px]" title={`Ingresó a los ${ev.minuto}'`}>
+                                    <ArrowRight className="w-3 h-3 text-zinc-400" />
+                                    <span className="font-bold text-[#3ddc84]">{ev.minuto}'</span>
                                   </span>
                                 );
                               } else if (ev.tipo === 'salida') {
                                 return (
-                                  <span key={idx} className="inline-flex items-center gap-0.5 text-[#e63946] bg-[#e63946]/10 border border-[#e63946]/30 px-1.5 py-0.5 rounded text-[10px]" title={`Salió a los ${ev.minuto}'`}>
-                                    <span className="text-xs">🔴</span> {ev.minuto}'
+                                  <span key={idx} className="inline-flex items-center gap-1 bg-[#182a1f] border border-[#243d2c] px-1.5 py-0.5 rounded text-[10px]" title={`Salió a los ${ev.minuto}'`}>
+                                    <ArrowLeft className="w-3 h-3 text-zinc-400" />
+                                    <span className="font-bold text-[#e63946]">{ev.minuto}'</span>
                                   </span>
                                 );
                               } else if (ev.tipo === 'expulsion') {
                                 return (
-                                  <span key={idx} className="inline-flex items-center gap-0.5 text-[#e63946] bg-[#e63946]/20 border border-[#e63946]/40 px-1.5 py-0.5 rounded text-[10px] font-bold" title={`Expulsado a los ${ev.minuto}'`}>
-                                    🟥 {ev.minuto}'
+                                  <span key={idx} className="inline-flex items-center gap-1 bg-[#e63946]/10 border border-[#e63946]/30 px-1.5 py-0.5 rounded text-[10px]" title={`Expulsado a los ${ev.minuto}'`}>
+                                    <span className="text-xs">🟥</span>
+                                    <span className="font-bold text-[#e63946]">{ev.minuto}'</span>
                                   </span>
                                 );
                               }
@@ -827,7 +1097,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                             })}
                           </div>
                         ) : item.titular ? (
-                          <span className="font-semibold text-[#3ddc84] bg-[#3ddc84]/10 border border-[#3ddc84]/30 px-1.5 py-0.5 rounded text-[10px]">
+                          <span className="font-semibold text-zinc-300 bg-zinc-800/80 border border-zinc-700 px-1.5 py-0.5 rounded text-[10px]">
                             0'
                           </span>
                         ) : (

@@ -46,6 +46,7 @@ import { APPS_SCRIPT_CODE } from '../data/appsScriptCode';
 import { RolUsuario, ClubConfig, Torneo, TipoTorneo } from '../types';
 import { SoccerBallLogo } from './SoccerBallLogo';
 import { DEFAULT_APPS_SCRIPT_URL } from '../config';
+import { FORMACIONES_DISPONIBLES } from '../utils/formations';
 
 interface ConfiguracionViewProps {
   rol?: RolUsuario;
@@ -153,6 +154,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
   const [nombreEquipoInput, setNombreEquipoInput] = useState(clubConfig.nombre);
   const [colorPropioInput, setColorPropioInput] = useState(clubConfig.colorPropio);
   const [colorRivalInput, setColorRivalInput] = useState(clubConfig.colorRival);
+  const [formacionPredeterminadaInput, setFormacionPredeterminadaInput] = useState(clubConfig.formacionPredeterminada || '4-3-3');
   const [mensajeClubGuardado, setMensajeClubGuardado] = useState(false);
 
   // Gestión de Temporadas / Torneos
@@ -177,7 +179,8 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
     const nuevoConfig: ClubConfig = {
       nombre: nuevoNombre,
       colorPropio: colorPropioInput,
-      colorRival: colorRivalInput
+      colorRival: colorRivalInput,
+      formacionPredeterminada: formacionPredeterminadaInput
     };
     StorageService.saveClubConfig(nuevoConfig);
     setClubConfig(nuevoConfig);
@@ -230,7 +233,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
     setNombreNuevoTorneo(`${tipoLabel} ${anio}`);
   };
 
-  const handleCrearTorneo = (e: React.FormEvent) => {
+  const handleCrearTorneo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!esEditor || !nombreNuevoTorneo.trim()) return;
 
@@ -245,26 +248,41 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
     setMensajeTorneoGuardado(`¡Torneo "${nuevo.nombre}" iniciado como temporada activa!`);
     setTimeout(() => setMensajeTorneoGuardado(null), 4000);
     onDatosActualizados();
+
+    // Sincronizar inmediatamente con Google Sheets
+    await ApiService.guardarTorneo(nuevo);
   };
 
-  const handleCerrarTorneo = (id: string, nombre: string) => {
+  const handleCerrarTorneo = async (id: string, nombre: string) => {
     if (!esEditor) return;
     if (confirm(`¿Estás seguro de cerrar la temporada/torneo "${nombre}"? Los nuevos partidos no pertenecerán a este torneo a menos que lo reabras.`)) {
       StorageService.cerrarTorneo(id);
-      setTorneos(StorageService.getTorneos());
+      const torneosActualizados = StorageService.getTorneos();
+      setTorneos(torneosActualizados);
       setMensajeTorneoGuardado(`Se cerró la temporada "${nombre}".`);
       setTimeout(() => setMensajeTorneoGuardado(null), 3500);
       onDatosActualizados();
+
+      const torneoCerrado = torneosActualizados.find(t => t.id === id);
+      if (torneoCerrado) {
+        await ApiService.guardarTorneo(torneoCerrado);
+      }
     }
   };
 
-  const handleReabrirTorneo = (id: string, nombre: string) => {
+  const handleReabrirTorneo = async (id: string, nombre: string) => {
     if (!esEditor) return;
     StorageService.reabrirTorneo(id);
-    setTorneos(StorageService.getTorneos());
+    const torneosActualizados = StorageService.getTorneos();
+    setTorneos(torneosActualizados);
     setMensajeTorneoGuardado(`Se reabrió "${nombre}" como torneo activo.`);
     setTimeout(() => setMensajeTorneoGuardado(null), 3500);
     onDatosActualizados();
+
+    const torneoReabierto = torneosActualizados.find(t => t.id === id);
+    if (torneoReabierto) {
+      await ApiService.guardarTorneo(torneoReabierto);
+    }
   };
 
   const handleToggleAutoSync = (checked: boolean) => {
@@ -686,6 +704,32 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
             </div>
           </div>
 
+          {/* Formación Táctica Predeterminada */}
+          <div className="p-4 bg-[#0f1712] border border-[#243d2c] rounded-xl space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <label className="block text-xs font-bold text-white uppercase">
+                  Táctica / Formación Titular por Defecto
+                </label>
+                <p className="text-[11px] text-[#9aa89f] mt-0.5">
+                  Esta disposición táctica se precargará automáticamente al armar un nuevo partido.
+                </p>
+              </div>
+              <select
+                disabled={!esEditor}
+                value={formacionPredeterminadaInput}
+                onChange={(e) => setFormacionPredeterminadaInput(e.target.value)}
+                className="px-3 py-2 bg-[#182a1f] border border-[#243d2c] rounded-lg text-xs font-bold text-[#3ddc84] focus:outline-none focus:border-[#3ddc84] disabled:opacity-60 cursor-pointer"
+              >
+                {Object.keys(FORMACIONES_DISPONIBLES).map((f) => (
+                  <option key={f} value={f}>
+                    Formación {f}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {/* Vista previa en vivo del resultado */}
           <div className="p-4 bg-[#0a100d] border border-[#243d2c] rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -726,7 +770,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
                 className="px-5 py-2.5 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-[#3ddc84]/20 flex items-center gap-2 transition-all cursor-pointer"
               >
                 <Check className="w-4 h-4" />
-                GUARDAR NOMBRE Y COLORES
+                GUARDAR AJUSTES DEL CLUB
               </button>
             </div>
           )}

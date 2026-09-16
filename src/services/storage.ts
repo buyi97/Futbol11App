@@ -556,7 +556,8 @@ export const StorageService = {
         nombre: parsed.nombre || DEFAULT_CLUB_CONFIG.nombre,
         colorPropio: parsed.colorPropio || DEFAULT_CLUB_CONFIG.colorPropio,
         colorRival: parsed.colorRival || DEFAULT_CLUB_CONFIG.colorRival,
-        subtitulo: parsed.subtitulo || DEFAULT_CLUB_CONFIG.subtitulo
+        subtitulo: parsed.subtitulo || DEFAULT_CLUB_CONFIG.subtitulo,
+        formacionPredeterminada: parsed.formacionPredeterminada || '4-3-3'
       };
     } catch {
       return DEFAULT_CLUB_CONFIG;
@@ -574,6 +575,14 @@ export const StorageService = {
       window.dispatchEvent(new CustomEvent('club-config-changed', { detail: updated }));
     }
     return updated;
+  },
+
+  getFormacionPredeterminada(): string {
+    return this.getClubConfig().formacionPredeterminada || '4-3-3';
+  },
+
+  saveFormacionPredeterminada(formacion: string): void {
+    this.saveClubConfig({ formacionPredeterminada: formacion });
   },
 
   getNombreEquipo(): string {

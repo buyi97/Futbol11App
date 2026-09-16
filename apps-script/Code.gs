@@ -209,7 +209,7 @@ function doPost(e) {
         p.etiqueta || '',
         p.torneo_id || 'torneo-amistoso',
         p.torneo_nombre || 'Amistoso',
-        p.formacion_propia || '4-3-3'
+        "'" + (p.formacion_propia || '4-3-3')
       ];
       sheetPartidos.appendRow(partidoRow);
 
@@ -274,7 +274,7 @@ function doPost(e) {
         p.etiqueta || '',
         p.torneo_id || 'torneo-amistoso',
         p.torneo_nombre || 'Amistoso',
-        p.formacion_propia || '4-3-3'
+        "'" + (p.formacion_propia || '4-3-3')
       ];
 
       if (rowIdx > 0) {
@@ -561,7 +561,7 @@ function doPost(e) {
             p.etiqueta || '',
             p.torneo_id || 'torneo-amistoso',
             p.torneo_nombre || 'Amistoso',
-            p.formacion_propia || '4-3-3'
+            "'" + (p.formacion_propia || '4-3-3')
           ];
         });
       }
@@ -641,16 +641,17 @@ function doPost(e) {
       }
 
       // 6. Guardar Torneos
+      let countTorneos = 0;
       if (torneos.length > 0) {
         const sheetTorneos = getOrCreateSheet_(ss, 'Torneos', ['id', 'nombre', 'tipo', 'anio', 'estado', 'fechaInicio', 'fechaCierre', 'descripcion']);
-        guardarLoteConId_(sheetTorneos, torneos, function(t) {
+        countTorneos = guardarLoteConId_(sheetTorneos, torneos, function(t) {
           return [
             t.id || ('torneo-' + Utilities.getUuid().substring(0, 8)),
             t.nombre || '',
             t.tipo || 'liga',
             t.anio || new Date().getFullYear(),
             t.estado || 'activo',
-            t.fechaInicio || '',
+            t.fechaInicio || t.fecha_creacion || '',
             t.fechaCierre || '',
             t.descripcion || ''
           ];
@@ -686,6 +687,7 @@ function doPost(e) {
           convocados: countConv,
           rivales: countRiv,
           incidencias: countInc,
+          torneos: countTorneos,
           timestamp: new Date().toISOString()
         }
       });
@@ -749,6 +751,22 @@ function getOrCreateSheet_(ss, name, headers) {
     sheet.appendRow(headers);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#243d2c').setFontColor('#ffffff');
     sheet.setFrozenRows(1);
+  } else {
+    // Asegurar que la fila 1 contenga siempre la totalidad de los encabezados oficiales actualizados
+    const currentCols = sheet.getLastColumn();
+    const existingHeaders = currentCols > 0 ? sheet.getRange(1, 1, 1, Math.max(currentCols, headers.length)).getValues()[0] : [];
+    let needsUpdate = false;
+    for (let i = 0; i < headers.length; i++) {
+      if (!existingHeaders[i] || existingHeaders[i].toString().trim() !== headers[i]) {
+        needsUpdate = true;
+        break;
+      }
+    }
+    if (needsUpdate || currentCols < headers.length) {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#243d2c').setFontColor('#ffffff');
+      sheet.setFrozenRows(1);
+    }
   }
   return sheet;
 }
@@ -793,7 +811,13 @@ function getSheetObjects_(sheet) {
     const row = data[i];
     const obj = {};
     for (let j = 0; j < headers.length; j++) {
-      obj[headers[j]] = row[j];
+      let val = row[j];
+      if (typeof val === 'string' && val.indexOf("'") === 0) {
+        val = val.substring(1);
+      } else if (headers[j] === 'formacion_propia' && (val instanceof Date || (typeof val === 'string' && val.indexOf('2003') !== -1))) {
+        val = '4-3-3';
+      }
+      obj[headers[j]] = val;
     }
     results.push(obj);
   }

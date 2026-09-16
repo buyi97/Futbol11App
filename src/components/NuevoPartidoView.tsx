@@ -81,7 +81,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   const [modoRival, setModoRival] = useState<ModoRival>('nombre_numero');
 
   // Formaciones tácticas
-  const [formacionPropia, setFormacionPropia] = useState<string>('4-3-3');
+  const [formacionPropia, setFormacionPropia] = useState<string>(() => StorageService.getFormacionPredeterminada() || '4-3-3');
   const [formacionRival, setFormacionRival] = useState<string>('4-4-2');
 
   // Lista de jugadores activos del club
@@ -91,7 +91,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   const [dorsalesMap, setDorsalesMap] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
     jugadoresActivos.forEach((j, idx) => {
-      init[j.id] = idx + 1;
+      init[j.id] = (j.numero !== undefined && j.numero !== null && j.numero > 0) ? j.numero : (idx + 1);
     });
     return init;
   });

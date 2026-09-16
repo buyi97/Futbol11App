@@ -629,6 +629,7 @@ export const ApiService = {
       convocados: number;
       rivales: number;
       incidencias: number;
+      torneos?: number;
     };
     metodo?: 'bulk' | 'secuencial';
     error?: string;
@@ -646,6 +647,7 @@ export const ApiService = {
     const convocados = StorageService.getConvocados();
     const rivales = StorageService.getRivales();
     const incidencias = StorageService.getIncidencias();
+    const torneos = StorageService.getTorneos();
     const clubConfig = StorageService.getClubConfig();
 
     onProgreso?.('Preparando datos para sincronización...', 10);
@@ -659,6 +661,7 @@ export const ApiService = {
         convocados,
         rivales,
         incidencias,
+        torneos,
         clubConfig,
         config: clubConfig
       });
@@ -673,7 +676,8 @@ export const ApiService = {
             partidos: resBulk.data.partidos ?? partidos.length,
             convocados: resBulk.data.convocados ?? convocados.length,
             rivales: resBulk.data.rivales ?? rivales.length,
-            incidencias: resBulk.data.incidencias ?? incidencias.length
+            incidencias: resBulk.data.incidencias ?? incidencias.length,
+            torneos: resBulk.data.torneos ?? torneos.length
           },
           metodo: 'bulk'
         };
@@ -696,10 +700,17 @@ export const ApiService = {
       onProgreso?.('Inicializando estructura de hojas en Google Sheets...', 15);
       await ApiService.inicializarHojas();
 
+      // Torneos
+      for (let i = 0; i < torneos.length; i++) {
+        const t = torneos[i];
+        onProgreso?.(`Guardando torneo ${i + 1}/${torneos.length}: ${t.nombre}...`, 18);
+        await ApiService.request('guardarTorneo', { torneo: t });
+      }
+
       // Jugadores
       for (let i = 0; i < jugadores.length; i++) {
         const j = jugadores[i];
-        const pct = 15 + Math.round(((i + 1) / Math.max(1, jugadores.length)) * 25);
+        const pct = 20 + Math.round(((i + 1) / Math.max(1, jugadores.length)) * 25);
         onProgreso?.(`Guardando jugador ${i + 1}/${jugadores.length}: ${j.nombre}...`, pct);
         await ApiService.request('guardarJugador', { jugador: j });
       }
@@ -709,7 +720,7 @@ export const ApiService = {
         const p = partidos[i];
         const partConv = convocados.filter(c => c.partido_id === p.id);
         const partRiv = rivales.filter(r => r.partido_id === p.id);
-        const pct = 40 + Math.round(((i + 1) / Math.max(1, partidos.length)) * 30);
+        const pct = 45 + Math.round(((i + 1) / Math.max(1, partidos.length)) * 30);
         onProgreso?.(`Guardando partido ${i + 1}/${partidos.length} (vs ${p.rival})...`, pct);
         await ApiService.request('crearPartido', { partido: p, convocados: partConv, rivales: partRiv });
       }
@@ -717,7 +728,7 @@ export const ApiService = {
       // Incidencias
       for (let i = 0; i < incidencias.length; i++) {
         const inc = incidencias[i];
-        const pct = 70 + Math.round(((i + 1) / Math.max(1, incidencias.length)) * 28);
+        const pct = 75 + Math.round(((i + 1) / Math.max(1, incidencias.length)) * 23);
         if (i % 3 === 0 || i === incidencias.length - 1) {
           onProgreso?.(`Guardando incidencia ${i + 1}/${incidencias.length}...`, pct);
         }
@@ -727,13 +738,14 @@ export const ApiService = {
       onProgreso?.('¡Sincronización completa finalizada!', 100);
       return {
         ok: true,
-        message: '¡Historial y plantel sincronizados con éxito en Google Sheets!',
+        message: '¡Historial, torneos y plantel sincronizados con éxito en Google Sheets!',
         detalles: {
           jugadores: jugadores.length,
           partidos: partidos.length,
           convocados: convocados.length,
           rivales: rivales.length,
-          incidencias: incidencias.length
+          incidencias: incidencias.length,
+          torneos: torneos.length
         },
         metodo: 'secuencial'
       };
@@ -855,8 +867,24 @@ export const ApiService = {
       console.warn('[ApiService] Error al intentar obtenerTodo, ejecutando fallback:', err);
     }
 
-    // 2. Fallback inteligente y resiliente: getPlantel + getHistorial + getPartido
+    // 2. Fallback inteligente y resiliente: getTorneos + getPlantel + getHistorial + getPartido
     try {
+      onProgreso?.('Descargando torneos...', 15);
+      try {
+        const resTorneos = await ApiService.request<any>('getTorneos');
+        if (resTorneos.ok && Array.isArray(resTorneos.data)) {
+          const mapT = new Map<string, any>();
+          resTorneos.data.forEach((t: any) => {
+            if (t && t.id && !mapT.has(t.id)) mapT.set(t.id, t);
+          });
+          if (mapT.size > 0) {
+            StorageService.saveTorneos(Array.from(mapT.values()));
+          }
+        }
+      } catch (e) {
+        console.warn('Error al descargar torneos en fallback:', e);
+      }
+
       onProgreso?.('Descargando plantel de jugadores...', 30);
       const resPlantel = await ApiService.request('getPlantel');
       const jugadoresRaw: any[] = (resPlantel.ok && Array.isArray(resPlantel.data)) ? resPlantel.data : [];
