@@ -197,6 +197,11 @@ export function calcularMinutosPartido(
     let minutoExpulsion: number | undefined = undefined;
     let motivoSalida: 'cambio' | 'expulsion' | undefined = undefined;
     let contadorAmarillas = 0;
+    const eventosTrayectoria: { tipo: 'inicio' | 'entrada' | 'salida' | 'expulsion'; minuto: number }[] = [];
+
+    if (convocado.titular) {
+      eventosTrayectoria.push({ tipo: 'inicio', minuto: 0 });
+    }
 
     // Procesar incidencias en orden cronológico
     for (const inc of incidenciasOrdenadas) {
@@ -213,6 +218,7 @@ export function calcularMinutosPartido(
           momentoEntradaActual = undefined;
           ultimoMinutoSalida = minAbsoluto;
           motivoSalida = 'cambio';
+          eventosTrayectoria.push({ tipo: 'salida', minuto: minAbsoluto });
         }
 
         // Jugador que ingresa (sólo si no fue expulsado previamente)
@@ -222,6 +228,7 @@ export function calcularMinutosPartido(
           if (primerMinutoEntrada === undefined) {
             primerMinutoEntrada = minAbsoluto;
           }
+          eventosTrayectoria.push({ tipo: 'entrada', minuto: minAbsoluto });
         }
       }
 
@@ -240,6 +247,7 @@ export function calcularMinutosPartido(
         if (esExpulsion && !fueExpulsado) {
           fueExpulsado = true;
           minutoExpulsion = minAbsoluto;
+          eventosTrayectoria.push({ tipo: 'expulsion', minuto: minAbsoluto });
 
           if (estaEnCancha) {
             // Estaba jugando: su tiempo concluye en el momento exacto de la expulsión.
@@ -307,6 +315,7 @@ export function calcularMinutosPartido(
       fueExpulsado,
       minutoExpulsion,
       motivoSalida,
+      eventosTrayectoria,
       amarillas: contadorAmarillas,
       rojas: fueExpulsado ? 1 : 0,
       goles,

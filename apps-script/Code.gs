@@ -113,6 +113,7 @@ function doPost(e) {
     const requiereEditor = [
       'guardarJugador',
       'crearPartido',
+      'actualizarPartido',
       'eliminarPartido',
       'guardarIncidencia',
       'eliminarIncidencia',
@@ -122,6 +123,7 @@ function doPost(e) {
       'sincronizarBaseCompleta',
       'guardarConfiguracion',
       'guardarClubConfig',
+      'guardarTorneo',
       'eliminarTorneo'
     ].indexOf(action) !== -1;
 
@@ -134,7 +136,7 @@ function doPost(e) {
     // 2. Endpoint: Inicializar Hojas y Encabezados
     if (action === 'inicializarHojas') {
       inicializarEstructura_(ss);
-      return jsonResponse_({ ok: true, data: 'Hojas inicializadas con éxito' });
+      return jsonResponse_({ ok: true, data: 'Hojas inicializadas con éxito incluyendo estructura de Torneos y Equipo' });
     }
 
     // 3. Endpoint: Plantel
@@ -154,7 +156,7 @@ function doPost(e) {
       const rowData = [
         id,
         j.nombre,
-        Number(j.numero) || 0,
+        j.numero !== undefined ? Number(j.numero) : '',
         j.posicion || 'Mediocampista',
         j.activo !== false ? 'TRUE' : 'FALSE',
         j.fecha_alta || Utilities.formatDate(new Date(), 'GMT', 'yyyy-MM-dd')
@@ -186,7 +188,7 @@ function doPost(e) {
       const sheetPartidos = getOrCreateSheet_(ss, 'Partidos', [
         'id', 'fecha', 'rival', 'modo_rival', 'cancha', 'condicion',
         'resultado_propio', 'resultado_rival', 'agregado_1T', 'agregado_2T',
-        'duracion_tiempo_min', 'estado', 'creado_por', 'etiqueta', 'torneo_id', 'torneo_nombre'
+        'duracion_tiempo_min', 'estado', 'creado_por', 'etiqueta', 'torneo_id', 'torneo_nombre', 'formacion_propia'
       ]);
 
       const partidoId = p.id || ('part-' + Utilities.getUuid().substring(0, 8));
@@ -205,20 +207,25 @@ function doPost(e) {
         p.estado || 'en_curso',
         p.creado_por || 'Editor',
         p.etiqueta || '',
-        p.torneo_id || '',
-        p.torneo_nombre || ''
+        p.torneo_id || 'torneo-amistoso',
+        p.torneo_nombre || 'Amistoso',
+        p.formacion_propia || '4-3-3'
       ];
       sheetPartidos.appendRow(partidoRow);
 
       // Guardar Convocados
       if (convocados.length > 0) {
-        const sheetConv = getOrCreateSheet_(ss, 'Convocados', ['id', 'partido_id', 'jugador_id', 'titular']);
+        const sheetConv = getOrCreateSheet_(ss, 'Convocados', ['id', 'partido_id', 'jugador_id', 'titular', 'numero', 'posicion_tactica', 'tactica_x', 'tactica_y']);
         convocados.forEach(c => {
           sheetConv.appendRow([
             c.id || Utilities.getUuid().substring(0, 8),
             partidoId,
             c.jugador_id,
-            c.titular ? 'TRUE' : 'FALSE'
+            c.titular ? 'TRUE' : 'FALSE',
+            c.numero !== undefined ? Number(c.numero) : '',
+            c.posicion_tactica || '',
+            c.tactica_x !== undefined ? Number(c.tactica_x) : '',
+            c.tactica_y !== undefined ? Number(c.tactica_y) : ''
           ]);
         });
       }
@@ -237,6 +244,64 @@ function doPost(e) {
       }
 
       return jsonResponse_({ ok: true, data: { id: partidoId } });
+    }
+
+    if (action === 'actualizarPartido') {
+      const p = body.partido;
+      if (!p || !p.id) return jsonResponse_({ ok: false, error: 'Falta partido o partido.id' });
+
+      const sheetPartidos = getOrCreateSheet_(ss, 'Partidos', [
+        'id', 'fecha', 'rival', 'modo_rival', 'cancha', 'condicion',
+        'resultado_propio', 'resultado_rival', 'agregado_1T', 'agregado_2T',
+        'duracion_tiempo_min', 'estado', 'creado_por', 'etiqueta', 'torneo_id', 'torneo_nombre', 'formacion_propia'
+      ]);
+
+      const rowIdx = findRowIndexById_(sheetPartidos, p.id);
+      const rowData = [
+        p.id,
+        p.fecha || '',
+        p.rival || '',
+        p.modo_rival || 'numero',
+        p.cancha || '',
+        p.condicion || 'local',
+        Number(p.resultado_propio) || 0,
+        Number(p.resultado_rival) || 0,
+        Number(p.agregado_1T) || 0,
+        Number(p.agregado_2T) || 0,
+        Number(p.duracion_tiempo_min) || 40,
+        p.estado || 'finalizado',
+        p.creado_por || 'Editor',
+        p.etiqueta || '',
+        p.torneo_id || 'torneo-amistoso',
+        p.torneo_nombre || 'Amistoso',
+        p.formacion_propia || '4-3-3'
+      ];
+
+      if (rowIdx > 0) {
+        sheetPartidos.getRange(rowIdx, 1, 1, rowData.length).setValues([rowData]);
+      } else {
+        sheetPartidos.appendRow(rowData);
+      }
+
+      // Si se envían convocados actualizados, sincronizarlos
+      if (body.convocados && Array.isArray(body.convocados)) {
+        const sheetConv = getOrCreateSheet_(ss, 'Convocados', ['id', 'partido_id', 'jugador_id', 'titular', 'numero', 'posicion_tactica', 'tactica_x', 'tactica_y']);
+        deleteRowsByFieldValue_(sheetConv, 'partido_id', p.id);
+        body.convocados.forEach(function(c) {
+          sheetConv.appendRow([
+            c.id || Utilities.getUuid().substring(0, 8),
+            p.id,
+            c.jugador_id,
+            c.titular ? 'TRUE' : 'FALSE',
+            c.numero !== undefined ? Number(c.numero) : '',
+            c.posicion_tactica || '',
+            c.tactica_x !== undefined ? Number(c.tactica_x) : '',
+            c.tactica_y !== undefined ? Number(c.tactica_y) : ''
+          ]);
+        });
+      }
+
+      return jsonResponse_({ ok: true, data: 'Partido actualizado con éxito' });
     }
 
     if (action === 'getPartido') {
@@ -403,6 +468,36 @@ function doPost(e) {
       return jsonResponse_({ ok: true, data: 'Torneo eliminado' });
     }
 
+    // Endpoint: GUARDAR TORNEO
+    if (action === 'guardarTorneo') {
+      const t = body.torneo;
+      if (!t || !t.id) return jsonResponse_({ ok: false, error: 'Falta torneo o torneo.id' });
+      const sheetTorneos = getOrCreateSheet_(ss, 'Torneos', ['id', 'nombre', 'tipo', 'anio', 'estado', 'fechaInicio', 'fechaCierre', 'descripcion']);
+      const rowData = [
+        t.id,
+        t.nombre || '',
+        t.tipo || 'liga',
+        t.anio || new Date().getFullYear(),
+        t.estado || 'activo',
+        t.fechaInicio || '',
+        t.fechaCierre || '',
+        t.descripcion || ''
+      ];
+      const rowIdx = findRowIndexById_(sheetTorneos, t.id);
+      if (rowIdx > 0) {
+        sheetTorneos.getRange(rowIdx, 1, 1, rowData.length).setValues([rowData]);
+      } else {
+        sheetTorneos.appendRow(rowData);
+      }
+      return jsonResponse_({ ok: true, data: t });
+    }
+
+    // Endpoint: OBTENER TORNEOS
+    if (action === 'getTorneos') {
+      const sheetTorneos = ss.getSheetByName('Torneos');
+      return jsonResponse_({ ok: true, data: sheetTorneos ? getSheetObjects_(sheetTorneos) : [] });
+    }
+
     // 6. Endpoint: SINCRONIZACIÓN COMPLETA (Batch / Lote de toda la base local)
     if (action === 'sincronizarTodo' || action === 'sincronizarBaseCompleta') {
       const jugadores = body.jugadores || body.plantel || [];
@@ -410,6 +505,7 @@ function doPost(e) {
       const convocados = body.convocados || [];
       const rivales = body.rivales || [];
       const incidencias = body.incidencias || [];
+      const torneos = body.torneos || [];
 
       // Garantizar que existan todas las hojas con sus encabezados
       inicializarEstructura_(ss);
@@ -422,7 +518,7 @@ function doPost(e) {
           return [
             j.id || ('jug-' + Utilities.getUuid().substring(0, 8)),
             j.nombre || '',
-            Number(j.numero) || 0,
+            j.numero !== undefined ? Number(j.numero) : '',
             j.posicion || 'Mediocampista',
             j.activo !== false ? 'TRUE' : 'FALSE',
             j.fecha_alta || Utilities.formatDate(new Date(), 'GMT', 'yyyy-MM-dd')
@@ -430,14 +526,23 @@ function doPost(e) {
         });
       }
 
-      // 2. Guardar Partidos
+      // 2. Guardar Partidos (con interceptor de borrado total / estado 0)
       let countPart = 0;
-      if (partidos.length > 0) {
-        const sheetPart = getOrCreateSheet_(ss, 'Partidos', [
-          'id', 'fecha', 'rival', 'modo_rival', 'cancha', 'condicion',
-          'resultado_propio', 'resultado_rival', 'agregado_1T', 'agregado_2T',
-          'duracion_tiempo_min', 'estado', 'creado_por', 'etiqueta', 'torneo_id', 'torneo_nombre'
-        ]);
+      const sheetPart = getOrCreateSheet_(ss, 'Partidos', [
+        'id', 'fecha', 'rival', 'modo_rival', 'cancha', 'condicion',
+        'resultado_propio', 'resultado_rival', 'agregado_1T', 'agregado_2T',
+        'duracion_tiempo_min', 'estado', 'creado_por', 'etiqueta', 'torneo_id', 'torneo_nombre', 'formacion_propia'
+      ]);
+
+      if (Array.isArray(partidos) && partidos.length === 0) {
+        // Si el array de partidos viene explícitamente vacío (se eliminó el último partido),
+        // limpiamos las filas de datos para no fallar ni dejar partidos huérfanos
+        const lastRow = sheetPart.getLastRow();
+        const lastCol = sheetPart.getLastColumn();
+        if (lastRow > 1 && lastCol > 0) {
+          sheetPart.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+        }
+      } else if (partidos.length > 0) {
         countPart = guardarLoteConId_(sheetPart, partidos, function(p) {
           return [
             p.id || ('part-' + Utilities.getUuid().substring(0, 8)),
@@ -454,30 +559,43 @@ function doPost(e) {
             p.estado || 'finalizado',
             p.creado_por || 'Editor',
             p.etiqueta || '',
-            p.torneo_id || '',
-            p.torneo_nombre || ''
+            p.torneo_id || 'torneo-amistoso',
+            p.torneo_nombre || 'Amistoso',
+            p.formacion_propia || '4-3-3'
           ];
         });
       }
 
       // 3. Guardar Convocados
       let countConv = 0;
-      if (convocados.length > 0) {
-        const sheetConv = getOrCreateSheet_(ss, 'Convocados', ['id', 'partido_id', 'jugador_id', 'titular']);
+      const sheetConv = getOrCreateSheet_(ss, 'Convocados', ['id', 'partido_id', 'jugador_id', 'titular', 'numero', 'posicion_tactica', 'tactica_x', 'tactica_y']);
+      if (Array.isArray(convocados) && convocados.length === 0 && Array.isArray(partidos) && partidos.length === 0) {
+        const lastRow = sheetConv.getLastRow();
+        const lastCol = sheetConv.getLastColumn();
+        if (lastRow > 1 && lastCol > 0) sheetConv.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+      } else if (convocados.length > 0) {
         countConv = guardarLoteConId_(sheetConv, convocados, function(c) {
           return [
             c.id || Utilities.getUuid().substring(0, 8),
             c.partido_id || '',
             c.jugador_id || '',
-            c.titular ? 'TRUE' : 'FALSE'
+            c.titular ? 'TRUE' : 'FALSE',
+            c.numero !== undefined ? Number(c.numero) : '',
+            c.posicion_tactica || '',
+            c.tactica_x !== undefined ? Number(c.tactica_x) : '',
+            c.tactica_y !== undefined ? Number(c.tactica_y) : ''
           ];
         });
       }
 
       // 4. Guardar Rivales
       let countRiv = 0;
-      if (rivales.length > 0) {
-        const sheetRiv = getOrCreateSheet_(ss, 'RivalesPartido', ['id', 'partido_id', 'numero', 'nombre']);
+      const sheetRiv = getOrCreateSheet_(ss, 'RivalesPartido', ['id', 'partido_id', 'numero', 'nombre']);
+      if (Array.isArray(rivales) && rivales.length === 0 && Array.isArray(partidos) && partidos.length === 0) {
+        const lastRow = sheetRiv.getLastRow();
+        const lastCol = sheetRiv.getLastColumn();
+        if (lastRow > 1 && lastCol > 0) sheetRiv.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+      } else if (rivales.length > 0) {
         countRiv = guardarLoteConId_(sheetRiv, rivales, function(r) {
           return [
             r.id || Utilities.getUuid().substring(0, 8),
@@ -490,11 +608,15 @@ function doPost(e) {
 
       // 5. Guardar Incidencias
       let countInc = 0;
-      if (incidencias.length > 0) {
-        const sheetInc = getOrCreateSheet_(ss, 'Incidencias', [
-          'id', 'partido_id', 'tiempo', 'minuto', 'segundo', 'tipo',
-          'equipo', 'jugador_id', 'jugador_id_secundario', 'detalle'
-        ]);
+      const sheetInc = getOrCreateSheet_(ss, 'Incidencias', [
+        'id', 'partido_id', 'tiempo', 'minuto', 'segundo', 'tipo',
+        'equipo', 'jugador_id', 'jugador_id_secundario', 'detalle'
+      ]);
+      if (Array.isArray(incidencias) && incidencias.length === 0 && Array.isArray(partidos) && partidos.length === 0) {
+        const lastRow = sheetInc.getLastRow();
+        const lastCol = sheetInc.getLastColumn();
+        if (lastRow > 1 && lastCol > 0) sheetInc.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+      } else if (incidencias.length > 0) {
         countInc = guardarLoteConId_(sheetInc, incidencias, function(inc) {
           return [
             inc.id || Utilities.getUuid().substring(0, 8),
@@ -518,7 +640,24 @@ function doPost(e) {
         });
       }
 
-      // 5. Guardar Configuración si viene en el payload
+      // 6. Guardar Torneos
+      if (torneos.length > 0) {
+        const sheetTorneos = getOrCreateSheet_(ss, 'Torneos', ['id', 'nombre', 'tipo', 'anio', 'estado', 'fechaInicio', 'fechaCierre', 'descripcion']);
+        guardarLoteConId_(sheetTorneos, torneos, function(t) {
+          return [
+            t.id || ('torneo-' + Utilities.getUuid().substring(0, 8)),
+            t.nombre || '',
+            t.tipo || 'liga',
+            t.anio || new Date().getFullYear(),
+            t.estado || 'activo',
+            t.fechaInicio || '',
+            t.fechaCierre || '',
+            t.descripcion || ''
+          ];
+        });
+      }
+
+      // 7. Guardar Configuración si viene en el payload
       const conf = body.config || body.clubConfig;
       if (conf) {
         const sheetConf = getOrCreateSheet_(ss, 'Config', ['clave', 'valor']);
@@ -559,6 +698,7 @@ function doPost(e) {
       const sheetConv = ss.getSheetByName('Convocados');
       const sheetRiv = ss.getSheetByName('RivalesPartido');
       const sheetInc = ss.getSheetByName('Incidencias');
+      const sheetTorneos = ss.getSheetByName('Torneos');
       const sheetConf = ss.getSheetByName('Config');
 
       let configObj = null;
@@ -585,6 +725,7 @@ function doPost(e) {
           convocados: sheetConv ? getSheetObjects_(sheetConv) : [],
           rivales: sheetRiv ? getSheetObjects_(sheetRiv) : [],
           incidencias: sheetInc ? getSheetObjects_(sheetInc) : [],
+          torneos: sheetTorneos ? getSheetObjects_(sheetTorneos) : [],
           configuracion: configObj
         }
       });
@@ -617,15 +758,30 @@ function inicializarEstructura_(ss) {
   getOrCreateSheet_(ss, 'Partidos', [
     'id', 'fecha', 'rival', 'modo_rival', 'cancha', 'condicion',
     'resultado_propio', 'resultado_rival', 'agregado_1T', 'agregado_2T',
-    'duracion_tiempo_min', 'estado', 'creado_por', 'etiqueta', 'torneo_id', 'torneo_nombre'
+    'duracion_tiempo_min', 'estado', 'creado_por', 'etiqueta', 'torneo_id', 'torneo_nombre', 'formacion_propia'
   ]);
-  getOrCreateSheet_(ss, 'Convocados', ['id', 'partido_id', 'jugador_id', 'titular']);
+  getOrCreateSheet_(ss, 'Convocados', ['id', 'partido_id', 'jugador_id', 'titular', 'numero', 'posicion_tactica', 'tactica_x', 'tactica_y']);
   getOrCreateSheet_(ss, 'RivalesPartido', ['id', 'partido_id', 'numero', 'nombre']);
   getOrCreateSheet_(ss, 'Incidencias', [
     'id', 'partido_id', 'tiempo', 'minuto', 'segundo', 'tipo',
     'equipo', 'jugador_id', 'jugador_id_secundario', 'detalle'
   ]);
+  const sheetTorneos = getOrCreateSheet_(ss, 'Torneos', ['id', 'nombre', 'tipo', 'anio', 'estado', 'fechaInicio', 'fechaCierre', 'descripcion']);
   getOrCreateSheet_(ss, 'Config', ['clave', 'valor']);
+
+  // Asegurar que exista al menos el Torneo por defecto "Amistosos"
+  if (sheetTorneos.getLastRow() <= 1) {
+    sheetTorneos.appendRow([
+      'torneo-amistoso',
+      'Amistosos',
+      'amistoso',
+      new Date().getFullYear(),
+      'activo',
+      new Date().toISOString().split('T')[0],
+      '',
+      'Torneo predeterminado para partidos amistosos'
+    ]);
+  }
 }
 
 function getSheetObjects_(sheet) {

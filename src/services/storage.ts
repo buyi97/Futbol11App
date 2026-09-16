@@ -749,24 +749,47 @@ export const StorageService = {
     }
   },
 
-  // --- Memoria para Deshacer (Undo) ---
-  getAccionDeshacer(): AccionDeshacer | null {
+  // --- Memoria para Deshacer (Undo múltiple) ---
+  getAccionesDeshacer(): AccionDeshacer[] {
     try {
       const data = localStorage.getItem(KEYS.MEMORIA_DESHACER);
-      return data ? JSON.parse(data) : null;
+      if (!data) return [];
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object') return [parsed];
+      return [];
     } catch {
-      return null;
+      return [];
     }
+  },
+
+  getAccionDeshacer(): AccionDeshacer | null {
+    const list = this.getAccionesDeshacer();
+    return list.length > 0 ? list[0] : null;
   },
 
   guardarAccionDeshacer(accion: AccionDeshacer): void {
     try {
-      localStorage.setItem(KEYS.MEMORIA_DESHACER, JSON.stringify(accion));
+      const actuales = this.getAccionesDeshacer().filter(a => a.id !== accion.id);
+      actuales.unshift(accion); // Más reciente primero
+      localStorage.setItem(KEYS.MEMORIA_DESHACER, JSON.stringify(actuales));
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('futbol11-deshacer-actualizado'));
       }
     } catch (e) {
       console.error('Error guardando acción para deshacer:', e);
+    }
+  },
+
+  eliminarAccionDeshacer(id: string): void {
+    try {
+      const restantes = this.getAccionesDeshacer().filter(a => a.id !== id);
+      localStorage.setItem(KEYS.MEMORIA_DESHACER, JSON.stringify(restantes));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('futbol11-deshacer-actualizado'));
+      }
+    } catch (e) {
+      console.error('Error eliminando acción para deshacer:', e);
     }
   },
 

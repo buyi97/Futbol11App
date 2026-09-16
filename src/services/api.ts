@@ -459,6 +459,41 @@ export const ApiService = {
   },
 
   /**
+   * Actualizar los datos de un partido y sus convocados en local y en Google Sheets
+   */
+  async actualizarPartido(partido: Partido, convocados?: Convocado[]): Promise<ApiResponse<string>> {
+    StorageService.savePartido(partido);
+    if (convocados && convocados.length > 0) {
+      const otrosConvocados = StorageService.getConvocados().filter(c => c.partido_id !== partido.id);
+      StorageService.saveConvocados([...otrosConvocados, ...convocados]);
+    }
+    const res = await ApiService.request<string>('actualizarPartido', { partido, convocados });
+    if (!res.ok && res.offline) {
+      StorageService.agregarAColaSync('actualizarPartido', { partido, convocados });
+    }
+    return { ok: true, data: 'Partido actualizado', offline: res.offline };
+  },
+
+  /**
+   * Guardar o actualizar un torneo en local y en Google Sheets
+   */
+  async guardarTorneo(torneo: Torneo): Promise<ApiResponse<Torneo>> {
+    const torneos = StorageService.getTorneos();
+    const idx = torneos.findIndex(t => t.id === torneo.id);
+    if (idx >= 0) {
+      torneos[idx] = torneo;
+    } else {
+      torneos.push(torneo);
+    }
+    StorageService.saveTorneos(torneos);
+    const res = await ApiService.request<Torneo>('guardarTorneo', { torneo });
+    if (!res.ok && res.offline) {
+      StorageService.agregarAColaSync('guardarTorneo', { torneo });
+    }
+    return { ok: true, data: torneo, offline: res.offline };
+  },
+
+  /**
    * Guardar la configuración del club (nombre, colores) en local y en Google Sheets
    */
   async guardarClubConfig(config: ClubConfig): Promise<ApiResponse<ClubConfig>> {
@@ -565,8 +600,8 @@ export const ApiService = {
     });
     StorageService.saveColaSync(cola);
 
-    // 7. Limpiar memoria de deshacer
-    StorageService.limpiarAccionDeshacer();
+    // 7. Quitar esta acción específica de la memoria de deshacer
+    StorageService.eliminarAccionDeshacer(accion.id);
 
     // 8. Disparar eventos globales de actualización
     if (typeof window !== 'undefined') {
@@ -763,6 +798,13 @@ export const ApiService = {
           // Restaurar torneos si vienen en los partidos
           restaurarTorneosDesdePartidos(partidosNorm);
         }
+        if (Array.isArray(data.torneos)) {
+          const mapT = new Map<string, any>();
+          data.torneos.forEach((t: any) => {
+            if (t && t.id && !mapT.has(t.id)) mapT.set(t.id, t);
+          });
+          StorageService.saveTorneos(Array.from(mapT.values()));
+        }
         if (Array.isArray(data.convocados)) {
           const mapC = new Map<string, any>();
           data.convocados.forEach((c: any) => {
@@ -949,7 +991,7 @@ function normalizarPartido(p: any): Partido {
     rival: String(p.rival || 'Rival'),
     modo_rival: p.modo_rival === 'numero' ? 'numero' : 'nombre_numero',
     cancha: String(p.cancha || ''),
-    condicion: p.condicion === 'visitante' ? 'visitante' : 'local',
+    condicion: p.condicion === 'visitante' ? 'visitante' : p.condicion === 'neutral' ? 'neutral' : 'local',
     resultado_propio: Number(p.resultado_propio) || 0,
     resultado_rival: Number(p.resultado_rival) || 0,
     agregado_1T: Number(p.agregado_1T) || 0,

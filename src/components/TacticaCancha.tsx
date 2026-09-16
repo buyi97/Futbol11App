@@ -40,6 +40,7 @@ interface TacticaCanchaProps {
   titulo?: string;
   colorEquipo?: 'verde' | 'amarillo' | 'azul' | 'rojo';
   editableDorsales?: boolean;
+  mostrarSuplentes?: boolean;
 }
 
 export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
@@ -56,7 +57,8 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
   onEliminarSuplente,
   titulo,
   colorEquipo = 'verde',
-  editableDorsales = true
+  editableDorsales = true,
+  mostrarSuplentes = false
 }) => {
   // Estado local para el intercambio de jugadores (tocar A, luego tocar B)
   const [jugadorParaSwapId, setJugadorParaSwapId] = useState<string | null>(null);
@@ -324,100 +326,102 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
       </div>
 
       {/* Banco de Suplentes / Relevos */}
-      <div className="w-full max-w-lg mt-3 p-3 bg-[#131f17] border border-[#243d2c] rounded-xl">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-[11px] font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
-            <span>🪑 Banco de Suplentes</span>
-            <span className="text-zinc-400 font-normal">({suplentes.length})</span>
+      {mostrarSuplentes && (
+        <div className="w-full max-w-lg mt-3 p-3 bg-[#131f17] border border-[#243d2c] rounded-xl">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[11px] font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🪑 Banco de Suplentes</span>
+              <span className="text-zinc-400 font-normal">({suplentes.length})</span>
+            </div>
+
+            {onAgregarSuplenteClick && (
+              <button
+                type="button"
+                onClick={onAgregarSuplenteClick}
+                className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-[#3ddc84] hover:text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Agregar Suplente
+              </button>
+            )}
           </div>
 
-          {onAgregarSuplenteClick && (
-            <button
-              type="button"
-              onClick={onAgregarSuplenteClick}
-              className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-[#3ddc84] hover:text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Agregar Suplente
-            </button>
+          {suplentes.length > 0 ? (
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+              {suplentes.map((s) => {
+                const estaSeleccionadoParaIncidencia = jugadorSeleccionadoId === s.id;
+                const estaParaSwap = jugadorParaSwapId === s.id;
+                const estaEditandoNumero = editandoNumeroId === s.id;
+
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => handleItemClick(s.id, true)}
+                    onDoubleClick={() => handleDoubleClick(s.id, s.numero)}
+                    className={`flex items-center justify-between gap-1 p-1.5 rounded-lg border text-left transition-all cursor-pointer group ${
+                      estaParaSwap
+                        ? 'bg-amber-500/30 border-amber-400 text-white ring-2 ring-amber-400 animate-pulse'
+                        : estaSeleccionadoParaIncidencia
+                        ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-white'
+                        : 'bg-[#182a1f]/60 hover:bg-[#182a1f] border-[#243d2c] text-zinc-300'
+                    }`}
+                    title={permitirIntercambio ? "Tocá para intercambiar con un titular o suplente" : undefined}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      {estaEditandoNumero ? (
+                        <input
+                          type="number"
+                          min="1"
+                          max="99"
+                          autoFocus
+                          value={numeroTemp}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setNumeroTemp(e.target.value)}
+                          onBlur={() => guardarNumero(s.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') guardarNumero(s.id);
+                            if (e.key === 'Escape') setEditandoNumeroId(null);
+                          }}
+                          className="w-6 h-6 rounded-full bg-black text-center text-white font-bold text-xs border border-white focus:outline-none"
+                        />
+                      ) : (
+                        <span className="w-6 h-6 rounded-full bg-zinc-700 text-zinc-200 text-xs font-bold font-display flex items-center justify-center shrink-0">
+                          {s.numero}
+                        </span>
+                      )}
+
+                      <span className="text-xs truncate font-medium">
+                        {s.nombre.split(' ')[0]}
+                      </span>
+                    </div>
+
+                    {/* Acciones de suplente */}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      {onEliminarSuplente && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEliminarSuplente(s.id);
+                          }}
+                          className="p-1 text-zinc-500 hover:text-[#e63946] rounded opacity-70 sm:opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Quitar suplente"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-zinc-500 py-1 italic">
+              No hay suplentes cargados en el banco.
+            </p>
           )}
         </div>
-
-        {suplentes.length > 0 ? (
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-            {suplentes.map((s) => {
-              const estaSeleccionadoParaIncidencia = jugadorSeleccionadoId === s.id;
-              const estaParaSwap = jugadorParaSwapId === s.id;
-              const estaEditandoNumero = editandoNumeroId === s.id;
-
-              return (
-                <div
-                  key={s.id}
-                  onClick={() => handleItemClick(s.id, true)}
-                  onDoubleClick={() => handleDoubleClick(s.id, s.numero)}
-                  className={`flex items-center justify-between gap-1 p-1.5 rounded-lg border text-left transition-all cursor-pointer group ${
-                    estaParaSwap
-                      ? 'bg-amber-500/30 border-amber-400 text-white ring-2 ring-amber-400 animate-pulse'
-                      : estaSeleccionadoParaIncidencia
-                      ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-white'
-                      : 'bg-[#182a1f]/60 hover:bg-[#182a1f] border-[#243d2c] text-zinc-300'
-                  }`}
-                  title={permitirIntercambio ? "Tocá para intercambiar con un titular o suplente" : undefined}
-                >
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    {estaEditandoNumero ? (
-                      <input
-                        type="number"
-                        min="1"
-                        max="99"
-                        autoFocus
-                        value={numeroTemp}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => setNumeroTemp(e.target.value)}
-                        onBlur={() => guardarNumero(s.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') guardarNumero(s.id);
-                          if (e.key === 'Escape') setEditandoNumeroId(null);
-                        }}
-                        className="w-6 h-6 rounded-full bg-black text-center text-white font-bold text-xs border border-white focus:outline-none"
-                      />
-                    ) : (
-                      <span className="w-6 h-6 rounded-full bg-zinc-700 text-zinc-200 text-xs font-bold font-display flex items-center justify-center shrink-0">
-                        {s.numero}
-                      </span>
-                    )}
-
-                    <span className="text-xs truncate font-medium">
-                      {s.nombre.split(' ')[0]}
-                    </span>
-                  </div>
-
-                  {/* Acciones de suplente */}
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    {onEliminarSuplente && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEliminarSuplente(s.id);
-                        }}
-                        className="p-1 text-zinc-500 hover:text-[#e63946] rounded opacity-70 sm:opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Quitar suplente"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-xs text-zinc-500 py-1 italic">
-            No hay suplentes cargados en el banco.
-          </p>
-        )}
-      </div>
+      )}
     </div>
   );
 };

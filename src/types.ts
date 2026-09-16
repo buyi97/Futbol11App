@@ -16,7 +16,7 @@ export interface Jugador {
 }
 
 export type ModoRival = 'numero' | 'nombre_numero';
-export type CondicionPartido = 'local' | 'visitante';
+export type CondicionPartido = 'local' | 'visitante' | 'neutral';
 export type EstadoPartido = 'programado' | 'en_curso' | 'finalizado';
 
 export type TipoTorneo = 'Apertura' | 'Clausura' | 'Anual' | 'Copa' | 'Amistoso';
@@ -133,6 +133,11 @@ export interface SesionAuth {
   expiraEn: number; // timestamp ms
 }
 
+export interface EventoTrayectoriaMinutos {
+  tipo: 'inicio' | 'entrada' | 'salida' | 'expulsion';
+  minuto: number;
+}
+
 export interface MinutosJugadorDetalle {
   jugador: Jugador;
   numero?: number;
@@ -143,6 +148,7 @@ export interface MinutosJugadorDetalle {
   fueExpulsado?: boolean;
   minutoExpulsion?: number;
   motivoSalida?: 'cambio' | 'expulsion';
+  eventosTrayectoria?: EventoTrayectoriaMinutos[];
   amarillas?: number;
   rojas?: number;
   goles: number;

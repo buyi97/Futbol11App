@@ -207,46 +207,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginExitoso }) => {
           </button>
         </form>
 
-        {/* Atajos de acceso rápido o pistas */}
-        <div className="mt-6 pt-5 border-t border-[#243d2c]">
-          <p className="text-xs font-medium text-[#9aa89f] text-center mb-2.5">
-            {hayUrlConfigurada
-              ? 'Contraseñas por defecto de Google Apps Script:'
-              : 'Atajos de prueba rápida para esta demo:'}
-          </p>
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              id="btn-quick-editor"
-              type="button"
-              onClick={() => handleSubmit(undefined, 'dt1234')}
-              disabled={cargando}
-              className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84]/50 hover:bg-[#243d2c]/30 transition-all text-center cursor-pointer group"
-            >
-              <span className="text-xs font-bold text-[#3ddc84] group-hover:scale-105 transition-transform flex items-center gap-1">
-                <UserCheck className="w-3.5 h-3.5" />
-                Rol Editor (DT)
-              </span>
-              <span className="text-[11px] text-[#9aa89f] mt-0.5">dt1234</span>
-            </button>
-
-            <button
-              id="btn-quick-lector"
-              type="button"
-              onClick={() => handleSubmit(undefined, 'hincha11')}
-              disabled={cargando}
-              className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-blue-400/50 hover:bg-[#243d2c]/30 transition-all text-center cursor-pointer group"
-            >
-              <span className="text-xs font-bold text-blue-400 group-hover:scale-105 transition-transform flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Rol Lector
-              </span>
-              <span className="text-[11px] text-[#9aa89f] mt-0.5">hincha11</span>
-            </button>
-          </div>
-        </div>
-
         {/* Indicador de conexión predeterminada */}
-        <div className="mt-4 pt-3 text-center">
+        <div className="mt-6 pt-4 border-t border-[#243d2c] text-center">
           <p className="text-[11px] text-[#9aa89f] inline-flex items-center gap-1.5">
             <Cloud className="w-3.5 h-3.5 text-[#3ddc84]" />
             <span>Sincronización oficial con Google Sheets activa</span>

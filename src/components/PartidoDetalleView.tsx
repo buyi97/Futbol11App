@@ -795,18 +795,43 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                       </td>
 
                       <td className="hidden md:table-cell py-2 px-2 text-center text-[11px] text-[#9aa89f]">
-                        {item.minutoEntrada !== undefined && item.minutoEntrada > 0
-                          ? `Ingresó ${item.minutoEntrada}'`
-                          : item.titular
-                          ? 'Inicio (0\')'
-                          : 'No ingresó'}
-                        {item.minutoSalida !== undefined && (
-                          item.motivoSalida === 'expulsion'
-                            ? <span className="text-[#e63946] font-medium">{` → 🟥 Expulsado ${item.minutoSalida}'`}</span>
-                            : ` → Salió ${item.minutoSalida}'`
-                        )}
-                        {item.fueExpulsado && item.minutoSalida === undefined && (
-                          <span className="text-[#e63946] font-medium">{` (🟥 Expulsado en banco${item.minutoExpulsion ? ` ${item.minutoExpulsion}'` : ''})`}</span>
+                        {item.eventosTrayectoria && item.eventosTrayectoria.length > 0 ? (
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            {item.eventosTrayectoria.map((ev, idx) => {
+                              if (ev.tipo === 'inicio') {
+                                return (
+                                  <span key={idx} className="font-semibold text-[#3ddc84] bg-[#3ddc84]/10 border border-[#3ddc84]/30 px-1.5 py-0.5 rounded text-[10px]" title="Titular desde el inicio">
+                                    0'
+                                  </span>
+                                );
+                              } else if (ev.tipo === 'entrada') {
+                                return (
+                                  <span key={idx} className="inline-flex items-center gap-0.5 text-[#3ddc84] bg-[#3ddc84]/10 border border-[#3ddc84]/30 px-1.5 py-0.5 rounded text-[10px]" title={`Ingresó a los ${ev.minuto}'`}>
+                                    <span className="text-xs">🟢</span> {ev.minuto}'
+                                  </span>
+                                );
+                              } else if (ev.tipo === 'salida') {
+                                return (
+                                  <span key={idx} className="inline-flex items-center gap-0.5 text-[#e63946] bg-[#e63946]/10 border border-[#e63946]/30 px-1.5 py-0.5 rounded text-[10px]" title={`Salió a los ${ev.minuto}'`}>
+                                    <span className="text-xs">🔴</span> {ev.minuto}'
+                                  </span>
+                                );
+                              } else if (ev.tipo === 'expulsion') {
+                                return (
+                                  <span key={idx} className="inline-flex items-center gap-0.5 text-[#e63946] bg-[#e63946]/20 border border-[#e63946]/40 px-1.5 py-0.5 rounded text-[10px] font-bold" title={`Expulsado a los ${ev.minuto}'`}>
+                                    🟥 {ev.minuto}'
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })}
+                          </div>
+                        ) : item.titular ? (
+                          <span className="font-semibold text-[#3ddc84] bg-[#3ddc84]/10 border border-[#3ddc84]/30 px-1.5 py-0.5 rounded text-[10px]">
+                            0'
+                          </span>
+                        ) : (
+                          <span className="text-zinc-500 text-[10px]">No ingresó</span>
                         )}
                       </td>
 
@@ -868,7 +893,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
             )}
           </div>
 
-          <div className="space-y-2.5 max-h-[480px] overflow-y-auto pr-1">
+          <div className="space-y-2.5">
             {incidenciasCronologicas.length > 0 ? (
               incidenciasCronologicas.map((inc) => {
                 const jug = jugadoresMap.get(inc.jugador_id || '');

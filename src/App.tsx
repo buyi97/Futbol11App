@@ -49,29 +49,29 @@ export default function App() {
   // Inicialización de datos
   const cargarDatosLocales = useCallback(() => {
     // Si no hay jugadores en localStorage y no se ha inicializado, cargar datos iniciales
-    let pLocal = StorageService.getPlantel();
+    let pLocal = StorageService.getPlantel() || [];
     if (pLocal.length === 0 && !localStorage.getItem('futbol11_datos_inicializados_v1')) {
       StorageService.savePlantel(MOCK_PLANTEL);
       pLocal = MOCK_PLANTEL;
     }
 
-    const partidosLocal = StorageService.getPartidos();
+    const partidosLocal = StorageService.getPartidos() || [];
     const mapP = new Map<string, Partido>();
     partidosLocal.forEach(p => {
       if (p && p.id && !mapP.has(p.id)) mapP.set(p.id, p);
     });
     const partidosUnicos = Array.from(mapP.values());
 
-    const convocadosLocal = StorageService.getConvocados();
-    const rivalesLocal = StorageService.getRivales();
-    const incidenciasLocal = StorageService.getIncidencias();
+    const convocadosLocal = StorageService.getConvocados() || [];
+    const rivalesLocal = StorageService.getRivales() || [];
+    const incidenciasLocal = StorageService.getIncidencias() || [];
 
-    setPlantel(pLocal);
+    setPlantel(pLocal || []);
     setPartidos(partidosUnicos);
     setConvocados(convocadosLocal);
     setRivales(rivalesLocal);
     setIncidencias(incidenciasLocal);
-    setColaCount(StorageService.getColaSync().length);
+    setColaCount(StorageService.getColaSync()?.length || 0);
     setHayPartidoEnVivo(StorageService.getPartidoEnVivo() !== null);
     setNombreEquipo(StorageService.getNombreEquipo());
     setColorPropio(StorageService.getColorPropio());
