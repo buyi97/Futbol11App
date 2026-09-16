@@ -5,8 +5,7 @@
  * - Convocatoria de jugadores del plantel propio (marcando titulares y suplentes con dorsales)
  * - 3. Disposición Táctica en Cancha para el equipo propio (con esquemas 4-3-3, 4-4-2, 4-1-3-2, 4-3-1-2, 3-5-2, 4-2-3-1,
  *   intercambio interactivo tocando a uno y luego a otro, edición de dorsal con doble clic y agregado de suplentes).
- * - 4. Jugadores del Rival con Disposición Táctica interactiva (por defecto 4-4-2 con orden 1; 4,2,6,3; 8,5,10,7; 11,9,
- *   edición de números y nombres, tácticas y agregado de suplentes).
+ * - 4. Jugadores del Rival con Disposición Táctica interactiva (edición de números y nombres, tácticas y agregado de suplentes).
  * - Iniciar partido y transicionar al cronómetro en vivo.
  */
 
@@ -28,7 +27,11 @@ import {
   ArrowRightLeft,
   X,
   Check,
-  Tag
+  Tag,
+  Star,
+  Search,
+  GripVertical,
+  UserCheck
 } from 'lucide-react';
 import { 
   Jugador, 
@@ -87,6 +90,9 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   // Lista de jugadores activos del club
   const jugadoresActivos = jugadores.filter(j => j.activo);
 
+  // Diccionario de jugadores de Halcones para lookup rápido
+  const jugadoresMap = new Map<string, Jugador>(jugadores.map(j => [j.id, j]));
+
   // Dorsales asignados para el partido: { [jugadorId]: numero }
   const [dorsalesMap, setDorsalesMap] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
@@ -96,22 +102,38 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     return init;
   });
 
-  // Orden de Titulares de Halcones (IDs en orden táctico de la formación 0 a 10)
-  const [ordenTitulares, setOrdenTitulares] = useState<string[]>(() => {
-    return jugadoresActivos.slice(0, 11).map(j => j.id);
+  // Convocados para el partido (Paso 2): jugadores que asistirán al encuentro
+  const [convocadosIds, setConvocadosIds] = useState<string[]>(() => {
+    const baseTitulares = StorageService.getTitularesPredeterminados();
+    if (baseTitulares.length > 0) {
+      // Convocamos a los del 11 base + el resto de los activos
+      const todosActivos = jugadoresActivos.map(j => j.id);
+      return Array.from(new Set([...baseTitulares, ...todosActivos]));
+    }
+    return jugadoresActivos.map(j => j.id);
   });
 
-  // Orden de Suplentes de Halcones (IDs en orden del banco)
-  const [ordenSuplentes, setOrdenSuplentes] = useState<string[]>(() => {
-    return jugadoresActivos.slice(11, 16).map(j => j.id);
+  // Slots de cancha para los titulares (Paso 3): 11 puestos indexados 0 a 10
+  // Si hay formación y 11 titular predeterminado guardado en Plantel, cargarlo; sino iniciar vacío
+  const [canchaSlots, setCanchaSlots] = useState<(string | null)[]>(() => {
+    const baseTitulares = StorageService.getTitularesPredeterminados();
+    const slots: (string | null)[] = Array(11).fill(null);
+    if (baseTitulares.length > 0) {
+      baseTitulares.slice(0, 11).forEach((id, idx) => {
+        if (jugadoresActivos.some(j => j.id === id)) {
+          slots[idx] = id;
+        }
+      });
+    }
+    return slots;
   });
 
-  // Modal para agregar suplente al banco de Halcones
-  const [modalAgregarSuplenteHalcones, setModalAgregarSuplenteHalcones] = useState(false);
+  // Estado para selección táctica mediante toque en pantalla (móvil / clic directo)
+  const [jugadorSeleccionadoId, setJugadorSeleccionadoId] = useState<string | null>(null);
+  const [filtroConvocadosTactica, setFiltroConvocadosTactica] = useState<string>('');
 
-  // RIVALES: Por defecto 4-4-2 con orden 1; 4,2,6,3 ; 8,5,10,7 ; 11,9
+  // RIVALES: 4-4-2
   const [rivalesTitulares, setRivalesTitulares] = useState<RivalItem[]>(() => {
-    // 4-4-2 pos order: 0: ARQ (1), 1: LD (4), 2: DFC (2), 3: DFC (6), 4: LI (3), 5: MD (8), 6: MC (5), 7: MC (10), 8: MI (7), 9: DC (11), 10: DC (9)
     const defaults = [
       { id: 'riv-t-0', numero: 1,  nombre: '', posicion: 'ARQ', titular: true },
       { id: 'riv-t-1', numero: 4,  nombre: '', posicion: 'LD',  titular: true },
@@ -142,74 +164,117 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   const [errorValidacion, setErrorValidacion] = useState<string | null>(null);
   const [iniciando, setIniciando] = useState(false);
 
-  // Diccionario de jugadores de Halcones para lookup rápido
-  const jugadoresMap = new Map<string, Jugador>(jugadores.map(j => [j.id, j]));
-
-  // --- INTERCAMBIO HALCONES (Tocar A y luego B) ---
-  const handleIntercambiarHalcones = (idA: string, idB: string) => {
-    const aEsTitular = ordenTitulares.includes(idA);
-    const bEsTitular = ordenTitulares.includes(idB);
-    const aEsSuplente = ordenSuplentes.includes(idA);
-    const bEsSuplente = ordenSuplentes.includes(idB);
-
-    if (aEsTitular && bEsTitular) {
-      // Intercambiar posiciones entre dos titulares
-      const nuevoTitulares = [...ordenTitulares];
-      const idxA = nuevoTitulares.indexOf(idA);
-      const idxB = nuevoTitulares.indexOf(idB);
-      nuevoTitulares[idxA] = idB;
-      nuevoTitulares[idxB] = idA;
-      setOrdenTitulares(nuevoTitulares);
-    } else if (aEsTitular && bEsSuplente) {
-      // Titular A pasa al banco, Suplente B entra a la cancha en el lugar de A
-      const nuevoTitulares = [...ordenTitulares];
-      const nuevoSuplentes = [...ordenSuplentes];
-      const idxA = nuevoTitulares.indexOf(idA);
-      const idxB = nuevoSuplentes.indexOf(idB);
-      nuevoTitulares[idxA] = idB;
-      nuevoSuplentes[idxB] = idA;
-      setOrdenTitulares(nuevoTitulares);
-      setOrdenSuplentes(nuevoSuplentes);
-    } else if (aEsSuplente && bEsTitular) {
-      // Suplente A entra a la cancha en el lugar de Titular B
-      const nuevoTitulares = [...ordenTitulares];
-      const nuevoSuplentes = [...ordenSuplentes];
-      const idxA = nuevoSuplentes.indexOf(idA);
-      const idxB = nuevoTitulares.indexOf(idB);
-      nuevoTitulares[idxB] = idA;
-      nuevoSuplentes[idxA] = idB;
-      setOrdenTitulares(nuevoTitulares);
-      setOrdenSuplentes(nuevoSuplentes);
-    } else if (aEsSuplente && bEsSuplente) {
-      // Intercambiar orden en el banco
-      const nuevoSuplentes = [...ordenSuplentes];
-      const idxA = nuevoSuplentes.indexOf(idA);
-      const idxB = nuevoSuplentes.indexOf(idB);
-      nuevoSuplentes[idxA] = idB;
-      nuevoSuplentes[idxB] = idA;
-      setOrdenSuplentes(nuevoSuplentes);
+  // --- CONTROL DE CONVOCATORIA (Paso 2) ---
+  const handleToggleConvocado = (jugadorId: string) => {
+    if (convocadosIds.includes(jugadorId)) {
+      // Desconvocar: quitar de convocados y si está en la cancha, removerlo del slot
+      setConvocadosIds(prev => prev.filter(id => id !== jugadorId));
+      setCanchaSlots(prev => prev.map(id => id === jugadorId ? null : id));
+      if (jugadorSeleccionadoId === jugadorId) setJugadorSeleccionadoId(null);
+    } else {
+      // Convocar
+      setConvocadosIds(prev => [...prev, jugadorId]);
     }
   };
 
-  // Editar dorsal de Halcones directamente en la cancha
-  const handleEditarNumeroHalcones = (jugadorId: string, nuevoNumero: number) => {
+  const handleConvocarTodos = () => {
+    setConvocadosIds(jugadoresActivos.map(j => j.id));
+  };
+
+  const handleConvocarSoloBase = () => {
+    const base = StorageService.getTitularesPredeterminados();
+    if (base.length > 0) {
+      setConvocadosIds(base);
+      const slots: (string | null)[] = Array(11).fill(null);
+      base.slice(0, 11).forEach((id, idx) => {
+        if (jugadoresActivos.some(j => j.id === id)) {
+          slots[idx] = id;
+        }
+      });
+      setCanchaSlots(slots);
+    }
+  };
+
+  const handleLimpiarConvocatoria = () => {
+    setConvocadosIds([]);
+    setCanchaSlots(Array(11).fill(null));
+    setJugadorSeleccionadoId(null);
+  };
+
+  // --- CONTROL DE TÁCTICA Y CANCHA (Paso 3) ---
+  const handleVaciarCancha = () => {
+    setCanchaSlots(Array(11).fill(null));
+    setJugadorSeleccionadoId(null);
+  };
+
+  const handleCargarBaseEnCancha = () => {
+    const base = StorageService.getTitularesPredeterminados();
+    if (base.length === 0) {
+      setErrorValidacion('Aún no configuraste un 11 base en la sección Plantel.');
+      return;
+    }
+    // Asegurar que estén en la lista de convocados
+    setConvocadosIds(prev => Array.from(new Set([...prev, ...base])));
+    const slots: (string | null)[] = Array(11).fill(null);
+    base.slice(0, 11).forEach((id, idx) => {
+      if (jugadoresActivos.some(j => j.id === id)) {
+        slots[idx] = id;
+      }
+    });
+    setCanchaSlots(slots);
+  };
+
+  const handleLlenarPrimeros11 = () => {
+    const nuevosSlots = [...canchaSlots];
+    const yaEnCancha = new Set(nuevosSlots.filter(Boolean));
+    const disponibles = convocadosIds.filter(id => !yaEnCancha.has(id));
+    let dispIdx = 0;
+
+    for (let i = 0; i < 11; i++) {
+      if (!nuevosSlots[i] && dispIdx < disponibles.length) {
+        nuevosSlots[i] = disponibles[dispIdx];
+        dispIdx++;
+      }
+    }
+    setCanchaSlots(nuevosSlots);
+  };
+
+  const handleAsignarJugadorASlot = (slotIndex: number, jugadorId: string) => {
+    setCanchaSlots(prev => {
+      const copy = [...prev];
+      // Si el jugador ya estaba en otro slot, lo liberamos de ese slot
+      const prevSlot = copy.indexOf(jugadorId);
+      if (prevSlot !== -1 && prevSlot !== slotIndex) {
+        // Intercambiar si el slot destino estaba ocupado
+        copy[prevSlot] = copy[slotIndex];
+      }
+      copy[slotIndex] = jugadorId;
+      return copy;
+    });
+    // Asegurar que el jugador esté convocado
+    if (!convocadosIds.includes(jugadorId)) {
+      setConvocadosIds(prev => [...prev, jugadorId]);
+    }
+    setJugadorSeleccionadoId(null);
+  };
+
+  const handleQuitarDeSlot = (slotIndex: number) => {
+    setCanchaSlots(prev => {
+      const copy = [...prev];
+      copy[slotIndex] = null;
+      return copy;
+    });
+  };
+
+  const handleQuitarJugadorDeCancha = (jugadorId: string) => {
+    setCanchaSlots(prev => prev.map(id => id === jugadorId ? null : id));
+  };
+
+  const handleEditarNumero = (jugadorId: string, nuevoNumero: number) => {
     setDorsalesMap(prev => ({
       ...prev,
       [jugadorId]: nuevoNumero
     }));
-  };
-
-  // Quitar suplente de Halcones
-  const handleEliminarSuplenteHalcones = (jugadorId: string) => {
-    setOrdenSuplentes(prev => prev.filter(id => id !== jugadorId));
-  };
-
-  // Agregar suplente a Halcones
-  const handleAgregarSuplenteHalcones = (jugadorId: string) => {
-    if (!ordenTitulares.includes(jugadorId) && !ordenSuplentes.includes(jugadorId)) {
-      setOrdenSuplentes(prev => [...prev, jugadorId]);
-    }
-    setModalAgregarSuplenteHalcones(false);
   };
 
   // --- INTERCAMBIO RIVALES (Tocar A y luego B) ---
@@ -288,66 +353,6 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     setModalAgregarSuplenteRival(false);
   };
 
-  // --- ARMAR JUGADORES PARA CANCHA HALCONES ---
-  const presetP = FORMACIONES_DISPONIBLES[formacionPropia] || FORMACIONES_DISPONIBLES['4-3-3'];
-  const jugadoresCanchaPropia: JugadorEnCancha[] = ordenTitulares.map((jugadorId, idx) => {
-    const j = jugadoresMap.get(jugadorId);
-    const coords = presetP[idx] || { pos: 'MC', x: 50, y: 50 };
-    return {
-      id: jugadorId,
-      nombre: j?.nombre || `Jugador ${idx + 1}`,
-      numero: dorsalesMap[jugadorId] || idx + 1,
-      posicion: coords.pos || j?.posicion,
-      x: coords.x,
-      y: coords.y,
-      titular: true
-    };
-  });
-
-  const suplentesCanchaPropia: JugadorEnCancha[] = ordenSuplentes.map((jugadorId, idx) => {
-    const j = jugadoresMap.get(jugadorId);
-    return {
-      id: jugadorId,
-      nombre: j?.nombre || `Suplente ${idx + 1}`,
-      numero: dorsalesMap[jugadorId] || 12 + idx,
-      posicion: j?.posicion,
-      x: 0,
-      y: 0,
-      titular: false
-    };
-  });
-
-  // --- ARMAR JUGADORES PARA CANCHA RIVAL ---
-  const presetR = FORMACIONES_DISPONIBLES[formacionRival] || FORMACIONES_DISPONIBLES['4-4-2'];
-  const jugadoresCanchaRival: JugadorEnCancha[] = rivalesTitulares.slice(0, 11).map((r, idx) => {
-    const coords = presetR[idx] || { pos: 'MC', x: 50, y: 50 };
-    return {
-      id: r.id,
-      nombre: r.nombre ? r.nombre : `Rival #${r.numero}`,
-      numero: r.numero,
-      posicion: coords.pos,
-      x: coords.x,
-      y: coords.y,
-      esRival: true,
-      titular: true
-    };
-  });
-
-  const suplentesCanchaRival: JugadorEnCancha[] = rivalesSuplentes.map((r, idx) => ({
-    id: r.id,
-    nombre: r.nombre ? r.nombre : `Rival #${r.numero}`,
-    numero: r.numero,
-    x: 0,
-    y: 0,
-    esRival: true,
-    titular: false
-  }));
-
-  // Jugadores disponibles para agregar como suplente a Halcones
-  const jugadoresDisponiblesHalcones = jugadoresActivos.filter(
-    j => !ordenTitulares.includes(j.id) && !ordenSuplentes.includes(j.id)
-  );
-
   // --- INICIAR PARTIDO ---
   const handleComenzarPartido = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -358,8 +363,13 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
       return;
     }
 
-    if (ordenTitulares.length !== 11) {
-      setErrorValidacion(`Se requieren exactamente 11 titulares para ${nombreEquipo} (actualmente hay ${ordenTitulares.length}).`);
+    // Titulares asignados en canchaSlots
+    const titularesEnCancha = canchaSlots
+      .map((id, idx) => ({ id, idx }))
+      .filter((item): item is { id: string; idx: number } => item.id !== null);
+
+    if (titularesEnCancha.length !== 11) {
+      setErrorValidacion(`Se requieren exactamente 11 titulares en la cancha para ${nombreEquipo} (actualmente hay ${titularesEnCancha.length}).`);
       return;
     }
 
@@ -391,8 +401,10 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
 
     // Convocados finales Halcones (titulares con posiciones x, y)
     const convocadosFinales: Convocado[] = [];
+    const titularesSet = new Set<string>();
 
-    ordenTitulares.forEach((jugadorId, idx) => {
+    titularesEnCancha.forEach(({ id: jugadorId, idx }) => {
+      titularesSet.add(jugadorId);
       const coords = presetP[idx] || { pos: 'MC', x: 50, y: 50 };
       convocadosFinales.push({
         id: 'conv-' + partidoId + '-' + jugadorId,
@@ -406,7 +418,9 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
       });
     });
 
-    ordenSuplentes.forEach((jugadorId, idx) => {
+    // Suplentes: los que están en convocadosIds pero no en titulares
+    const suplentesIds = convocadosIds.filter(id => !titularesSet.has(id));
+    suplentesIds.forEach((jugadorId, idx) => {
       convocadosFinales.push({
         id: 'conv-' + partidoId + '-' + jugadorId,
         partido_id: partidoId,
@@ -467,6 +481,48 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     onIniciarPartido();
   };
 
+  // Coordenadas tácticas según esquema elegido
+  const presetP = FORMACIONES_DISPONIBLES[formacionPropia] || FORMACIONES_DISPONIBLES['4-3-3'];
+  const presetR = FORMACIONES_DISPONIBLES[formacionRival] || FORMACIONES_DISPONIBLES['4-4-2'];
+
+  const jugadoresCanchaRival: JugadorEnCancha[] = rivalesTitulares.slice(0, 11).map((r, idx) => {
+    const coords = presetR[idx] || { pos: 'MC', x: 50, y: 50 };
+    return {
+      id: r.id,
+      nombre: r.nombre ? r.nombre : `Rival #${r.numero}`,
+      numero: r.numero,
+      posicion: coords.pos,
+      x: coords.x,
+      y: coords.y,
+      esRival: true,
+      titular: true
+    };
+  });
+
+  const suplentesCanchaRival: JugadorEnCancha[] = rivalesSuplentes.map((r) => ({
+    id: r.id,
+    nombre: r.nombre ? r.nombre : `Rival #${r.numero}`,
+    numero: r.numero,
+    x: 0,
+    y: 0,
+    esRival: true,
+    titular: false
+  }));
+
+  // Lista filtrada de convocados para el lateral en Paso 3
+  const convocadosFiltradosTactica = convocadosIds
+    .map(id => jugadoresMap.get(id))
+    .filter((j): j is Jugador => !!j)
+    .filter(j => {
+      if (!filtroConvocadosTactica.trim()) return true;
+      const q = filtroConvocadosTactica.toLowerCase();
+      const num = String(dorsalesMap[j.id] || j.numero || '');
+      return j.nombre.toLowerCase().includes(q) || j.posicion.toLowerCase().includes(q) || num.includes(q);
+    });
+
+  const titularesAsignadosCount = canchaSlots.filter(Boolean).length;
+  const suplentesCount = Math.max(0, convocadosIds.length - titularesAsignadosCount);
+
   return (
     <form onSubmit={handleComenzarPartido} className="space-y-6 pb-16">
       
@@ -480,7 +536,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-[#9aa89f] mt-0.5">
-            Definí los datos del encuentro, ordená las disposiciones tácticas en cancha e iniciá el cronómetro.
+            Definí los datos del encuentro, seleccioná la convocatoria y ordená las disposiciones tácticas en cancha.
           </p>
         </div>
       </div>
@@ -595,13 +651,13 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
             <label className="block text-xs font-semibold text-[#9aa89f] uppercase mb-1">
               Condición
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => setCondicion('local')}
                 className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                   condicion === 'local'
-                    ? 'bg-[#3ddc84]/15 border-[#3ddc84] text-[#3ddc84]'
+                    ? 'bg-[#3ddc84] text-[#0f1712] border-[#3ddc84]'
                     : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
                 }`}
               >
@@ -612,11 +668,22 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                 onClick={() => setCondicion('visitante')}
                 className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                   condicion === 'visitante'
-                    ? 'bg-[#3ddc84]/15 border-[#3ddc84] text-[#3ddc84]'
+                    ? 'bg-[#3ddc84] text-[#0f1712] border-[#3ddc84]'
                     : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
                 }`}
               >
                 Visitante
+              </button>
+              <button
+                type="button"
+                onClick={() => setCondicion('neutral')}
+                className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                  condicion === 'neutral'
+                    ? 'bg-[#3ddc84] text-[#0f1712] border-[#3ddc84]'
+                    : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
+                }`}
+              >
+                Neutral
               </button>
             </div>
           </div>
@@ -677,83 +744,111 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
 
       {/* 2. Convocatoria y Dorsales del Equipo Propio */}
       <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl p-5 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="font-display font-bold text-lg text-white uppercase tracking-wider flex items-center gap-2">
               <Users className="w-4 h-4 text-[#3ddc84]" />
               2. Convocatoria y Dorsales de {nombreEquipo}
             </h2>
             <p className="text-xs text-[#9aa89f]">
-              Asigná los dorsales para este partido. Los titulares y suplentes se ordenan e intercambian directamente en la cancha táctica.
+              Marcá quiénes van al partido y ajustá sus dorsales si es necesario. En el siguiente paso ordenarás el 11 titular en la cancha táctica.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-[#0f1712] border border-[#243d2c] text-white">
-              <strong className="text-[#3ddc84]">{ordenTitulares.length}</strong>/11 Titulares • <strong className="text-[#ffb703]">{ordenSuplentes.length}</strong> Suplentes
+              <strong className="text-[#3ddc84]">{convocadosIds.length}</strong>/{jugadoresActivos.length} Convocados
             </span>
+            <button
+              type="button"
+              onClick={handleConvocarTodos}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-[#3ddc84] transition-all cursor-pointer"
+            >
+              Convocar Todos
+            </button>
+            {StorageService.getTitularesPredeterminados().length > 0 && (
+              <button
+                type="button"
+                onClick={handleConvocarSoloBase}
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-[#9aa89f] hover:text-white transition-all cursor-pointer"
+                title="Cargar solo los 11 titulares configurados en Plantel"
+              >
+                Solo 11 Base
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleLimpiarConvocatoria}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#0f1712] border border-[#243d2c] hover:border-zinc-500 text-zinc-400 hover:text-white transition-all cursor-pointer"
+            >
+              Limpiar
+            </button>
           </div>
         </div>
 
-        {/* Grilla de Convocados rápida para dorsales */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[260px] overflow-y-auto p-1">
+        {/* Grilla de Selección de Convocatoria */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[320px] overflow-y-auto p-1">
           {jugadoresActivos.map((j) => {
-            const esTitular = ordenTitulares.includes(j.id);
-            const esSuplente = ordenSuplentes.includes(j.id);
-            const esConvocado = esTitular || esSuplente;
+            const esConvocado = convocadosIds.includes(j.id);
             const badge = getPosicionBadge(j.posicion);
+            const enSlot = canchaSlots.includes(j.id);
 
             return (
               <div
                 key={j.id}
-                className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
-                  esTitular
-                    ? 'bg-[#182a1f] border-[#3ddc84]/60'
-                    : esSuplente
-                    ? 'bg-[#182a1f] border-[#ffb703]/50'
-                    : 'bg-[#0f1712]/60 border-[#243d2c] opacity-60'
+                className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+                  esConvocado
+                    ? 'bg-[#182a1f] border-[#3ddc84]/60 shadow-sm'
+                    : 'bg-[#0f1712]/50 border-[#243d2c] opacity-65'
                 }`}
               >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleConvocado(j.id)}
+                    className="cursor-pointer text-[#3ddc84] shrink-0"
+                    title={esConvocado ? "Desconvocar del partido" : "Convocar al partido"}
+                  >
+                    {esConvocado ? (
+                      <CheckSquare className="w-5 h-5 text-[#3ddc84]" />
+                    ) : (
+                      <Square className="w-5 h-5 text-zinc-500 hover:text-zinc-300" />
+                    )}
+                  </button>
+
                   <div className="min-w-0 flex-1">
-                    <span className="text-xs font-semibold text-white truncate block">
+                    <span 
+                      onClick={() => handleToggleConvocado(j.id)}
+                      className="text-xs font-semibold text-white truncate block cursor-pointer hover:text-[#3ddc84]"
+                      title={j.nombre}
+                    >
                       {j.nombre}
                     </span>
-                    <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded border ${badge.bg}`}>
-                      {badge.label}
-                    </span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded border ${badge.bg}`}>
+                        {badge.label}
+                      </span>
+                      {enSlot && (
+                        <span className="text-[10px] text-[#3ddc84] font-bold">
+                          • En Cancha
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {esConvocado ? (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <div className="flex items-center gap-1 bg-[#0f1712] px-2 py-1 rounded-lg border border-[#243d2c]" title="Dorsal">
-                      <span className="text-[10px] text-zinc-400 font-bold">#</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="99"
-                        value={dorsalesMap[j.id] || 1}
-                        onChange={(e) => handleEditarNumeroHalcones(j.id, parseInt(e.target.value) || 1)}
-                        className="w-8 bg-transparent text-center font-bold text-xs text-[#3ddc84] focus:outline-none"
-                      />
-                    </div>
-
-                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-lg ${
-                      esTitular ? 'bg-[#3ddc84] text-[#0f1712]' : 'bg-[#ffb703] text-[#0f1712]'
-                    }`}>
-                      {esTitular ? 'TIT' : 'SUP'}
-                    </span>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleAgregarSuplenteHalcones(j.id)}
-                    className="px-2 py-1 bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-xs font-semibold text-[#9aa89f] hover:text-white rounded-lg cursor-pointer"
-                  >
-                    Convocar
-                  </button>
-                )}
+                {/* Edición de Dorsal para este partido */}
+                <div className="flex items-center gap-1 bg-[#0f1712] px-2 py-1 rounded-lg border border-[#243d2c] shrink-0" title="Dorsal para este partido">
+                  <span className="text-[10px] text-zinc-400 font-bold">#</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    value={dorsalesMap[j.id] !== undefined ? dorsalesMap[j.id] : (j.numero || 1)}
+                    onChange={(e) => handleEditarNumero(j.id, parseInt(e.target.value) || 1)}
+                    className="w-7 bg-transparent text-center font-bold text-xs text-[#3ddc84] focus:outline-none"
+                  />
+                </div>
               </div>
             );
           })}
@@ -769,16 +864,41 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
               3. Disposición Táctica en Cancha ({nombreEquipo})
             </h2>
             <p className="text-xs text-[#9aa89f]">
-              Intercambiá puestos tocando a un jugador y luego a otro (titulares y suplentes). Doble clic sobre el dorsal para editarlo.
+              Arrastrá los jugadores de la lista hacia los puestos de la cancha o tocalos para asignarlos. Los no ubicados quedan como suplentes.
             </p>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-[#0f1712] px-3 py-1.5 rounded-xl border border-[#243d2c]">
-            <span className="text-xs font-bold text-[#3ddc84]">⚽ {nombreEquipo}: {formacionPropia}</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-[#0f1712] border border-[#243d2c] text-white">
+              <strong className="text-[#3ddc84]">{titularesAsignadosCount}</strong>/11 Titulares • <strong className="text-[#ffb703]">{suplentesCount}</strong> Suplentes
+            </span>
+            <button
+              type="button"
+              onClick={handleCargarBaseEnCancha}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-[#3ddc84] transition-all cursor-pointer flex items-center gap-1"
+              title="Cargar la formación y titulares predeterminados del Plantel"
+            >
+              <Star className="w-3.5 h-3.5" />
+              11 Base
+            </button>
+            <button
+              type="button"
+              onClick={handleLlenarPrimeros11}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#0f1712] border border-[#243d2c] hover:border-zinc-400 text-zinc-300 hover:text-white transition-all cursor-pointer"
+            >
+              Auto-Completar 11
+            </button>
+            <button
+              type="button"
+              onClick={handleVaciarCancha}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#0f1712] border border-[#243d2c] hover:border-zinc-500 text-zinc-400 hover:text-white transition-all cursor-pointer"
+            >
+              Vaciar Cancha
+            </button>
           </div>
         </div>
 
-        {/* Selector de esquema táctico con 4-1-3-2 y 4-3-1-2 */}
+        {/* Selector de Esquema Táctico */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           <span className="text-xs font-semibold text-zinc-400 whitespace-nowrap">
             Esquema:
@@ -799,19 +919,270 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
           ))}
         </div>
 
-        {/* Cancha Táctica Interactiva Equipo Propio */}
-        <div className="flex justify-center p-2 bg-[#0a110d] border border-[#243d2c]/60 rounded-2xl">
-          <TacticaCancha
-            titulo={`Formación ${nombreEquipo} (${formacionPropia})`}
-            jugadores={jugadoresCanchaPropia}
-            suplentes={suplentesCanchaPropia}
-            colorEquipo="verde"
-            permitirIntercambio={true}
-            onIntercambiarJugadores={handleIntercambiarHalcones}
-            onEditarNumero={handleEditarNumeroHalcones}
-            onAgregarSuplenteClick={() => setModalAgregarSuplenteHalcones(true)}
-            onEliminarSuplente={handleEliminarSuplenteHalcones}
-          />
+        {/* Contenedor en 2 Columnas: Convocados a la izquierda y Cancha Táctica a la derecha */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-2">
+          
+          {/* Columna Izquierda: Lista de Convocados (Nombres Completos + Dorsal Editable + Estado) */}
+          <div className="lg:col-span-4 flex flex-col bg-[#0f1712] border border-[#243d2c] rounded-2xl p-3.5 space-y-3 max-h-[580px]">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5 text-[#3ddc84]" />
+                Convocados ({convocadosIds.length})
+              </span>
+              <span className="text-[11px] text-[#9aa89f]">
+                {jugadorSeleccionadoId ? '👉 Tocá un puesto' : 'Arrastrá o tocá'}
+              </span>
+            </div>
+
+            {/* Buscador rápido de convocados */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                placeholder="Buscar por nombre o número..."
+                value={filtroConvocadosTactica}
+                onChange={(e) => setFiltroConvocadosTactica(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-[#182a1f] border border-[#243d2c] rounded-lg text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#3ddc84]"
+              />
+            </div>
+
+            {/* Lista scrollable de convocados */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {convocadosFiltradosTactica.length > 0 ? (
+                convocadosFiltradosTactica.map((j) => {
+                  const slotIdx = canchaSlots.indexOf(j.id);
+                  const estaEnCancha = slotIdx !== -1;
+                  const posCancha = estaEnCancha ? (presetP[slotIdx]?.pos || 'TIT') : null;
+                  const esSeleccionado = jugadorSeleccionadoId === j.id;
+                  const badge = getPosicionBadge(j.posicion);
+
+                  return (
+                    <div
+                      key={j.id}
+                      draggable={true}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', JSON.stringify({ tipo: 'convocado', id: j.id }));
+                      }}
+                      onClick={() => {
+                        // Toggle selección por toque
+                        setJugadorSeleccionadoId(esSeleccionado ? null : j.id);
+                      }}
+                      className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer select-none ${
+                        esSeleccionado
+                          ? 'bg-[#3ddc84]/20 border-[#3ddc84] ring-2 ring-[#3ddc84]/40'
+                          : estaEnCancha
+                          ? 'bg-[#182a1f] border-[#3ddc84]/40 hover:border-[#3ddc84]'
+                          : 'bg-[#182a1f]/60 border-[#243d2c] hover:border-zinc-500'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <GripVertical className="w-3.5 h-3.5 text-zinc-500 shrink-0 cursor-grab" />
+
+                        {/* Dorsal editable directamente en la lista */}
+                        <div 
+                          className="flex items-center gap-0.5 bg-[#0f1712] px-1.5 py-0.5 rounded border border-[#243d2c] shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Editar dorsal"
+                        >
+                          <span className="text-[10px] text-zinc-400 font-bold">#</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            value={dorsalesMap[j.id] !== undefined ? dorsalesMap[j.id] : (j.numero || 1)}
+                            onChange={(e) => handleEditarNumero(j.id, parseInt(e.target.value) || 1)}
+                            className="w-6 bg-transparent text-center font-bold text-xs text-[#3ddc84] focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Nombre completo */}
+                        <div className="min-w-0 flex-1">
+                          <span className="text-xs font-semibold text-white truncate block" title={j.nombre}>
+                            {j.nombre}
+                          </span>
+                          <span className={`text-[9px] font-medium px-1.5 py-0.2 rounded border ${badge.bg}`}>
+                            {badge.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Estado y Acción */}
+                      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        {estaEnCancha ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#3ddc84]/20 text-[#3ddc84] border border-[#3ddc84]/30">
+                              {posCancha}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleQuitarJugadorDeCancha(j.id)}
+                              className="p-1 rounded text-zinc-400 hover:text-[#e63946] hover:bg-zinc-800 transition-colors"
+                              title="Quitar de la cancha (pasa a suplente)"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+                              Suplente
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Buscar primer slot vacío
+                                const primerVacio = canchaSlots.indexOf(null);
+                                if (primerVacio !== -1) {
+                                  handleAsignarJugadorASlot(primerVacio, j.id);
+                                } else {
+                                  setErrorValidacion('La cancha ya tiene los 11 titulares asignados.');
+                                }
+                              }}
+                              className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#3ddc84]/15 hover:bg-[#3ddc84] text-[#3ddc84] hover:text-[#0f1712] transition-colors"
+                              title="Ubicar en el primer puesto vacío"
+                            >
+                              + Cancha
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-8 text-zinc-500 text-xs">
+                  No hay convocados para mostrar
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Columna Derecha: Cancha Táctica Interactiva con Slots */}
+          <div className="lg:col-span-8 flex flex-col items-center">
+            {jugadorSeleccionadoId && (
+              <div className="w-full mb-2 p-2 bg-[#3ddc84]/15 border border-[#3ddc84]/40 rounded-xl text-xs text-[#3ddc84] flex items-center justify-between animate-fadeIn">
+                <span>
+                  Tocá cualquier puesto en la cancha para ubicar a <strong>{jugadoresMap.get(jugadorSeleccionadoId)?.nombre}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setJugadorSeleccionadoId(null)}
+                  className="text-zinc-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Cancha de fútbol verde profesional */}
+            <div className="relative w-full max-w-[580px] aspect-[4/5] bg-gradient-to-b from-[#14532d] via-[#15803d] to-[#14532d] rounded-2xl border-4 border-[#243d2c] shadow-2xl overflow-hidden p-2 select-none">
+              {/* Líneas de la cancha (Césped profesional) */}
+              <div className="absolute inset-3 border-2 border-white/40 rounded-lg pointer-events-none">
+                {/* Línea media */}
+                <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-white/40 -translate-y-1/2" />
+                {/* Círculo central */}
+                <div className="absolute top-1/2 left-1/2 w-28 h-28 border-2 border-white/40 rounded-full -translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute top-1/2 left-1/2 w-2 h-2 bg-white/40 rounded-full -translate-x-1/2 -translate-y-1/2" />
+                {/* Área Grande Superior */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-20 border-b-2 border-x-2 border-white/40" />
+                {/* Área Chica Superior */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-24 h-8 border-b-2 border-x-2 border-white/40" />
+                {/* Área Grande Inferior */}
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-48 h-20 border-t-2 border-x-2 border-white/40" />
+                {/* Área Chica Inferior */}
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-24 h-8 border-t-2 border-x-2 border-white/40" />
+              </div>
+
+              {/* Los 11 puestos tácticos */}
+              {presetP.slice(0, 11).map((coords, slotIdx) => {
+                const jugadorId = canchaSlots[slotIdx];
+                const jugador = jugadorId ? jugadoresMap.get(jugadorId) : null;
+                const dorsal = jugadorId ? (dorsalesMap[jugadorId] || jugador?.numero || (slotIdx + 1)) : null;
+
+                return (
+                  <div
+                    key={slotIdx}
+                    style={{
+                      position: 'absolute',
+                      left: `${coords.x}%`,
+                      top: `${coords.y}%`,
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const data = e.dataTransfer.getData('text/plain');
+                      if (data) {
+                        try {
+                          const parsed = JSON.parse(data);
+                          if (parsed.id) {
+                            handleAsignarJugadorASlot(slotIdx, parsed.id);
+                          }
+                        } catch {}
+                      }
+                    }}
+                    onClick={() => {
+                      if (jugadorSeleccionadoId) {
+                        handleAsignarJugadorASlot(slotIdx, jugadorSeleccionadoId);
+                      } else if (jugadorId) {
+                        // Si ya está ocupado y no hay seleccionado, seleccionamos a este jugador
+                        setJugadorSeleccionadoId(jugadorId);
+                      }
+                    }}
+                    className="flex flex-col items-center justify-center cursor-pointer group z-10 transition-transform active:scale-95"
+                  >
+                    {jugador ? (
+                      /* Slot Ocupado */
+                      <div className="flex flex-col items-center">
+                        <div 
+                          draggable={true}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/plain', JSON.stringify({ tipo: 'slot', id: jugador.id }));
+                          }}
+                          className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#182a1f] border-2 border-[#3ddc84] shadow-xl flex items-center justify-center text-white font-display font-bold text-sm sm:text-base ring-2 ring-black/40 group-hover:border-white transition-all"
+                        >
+                          <span>{dorsal}</span>
+                          
+                          {/* Botón quitar de la cancha */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleQuitarDeSlot(slotIdx);
+                            }}
+                            className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#e63946] text-white flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                            title="Quitar de este puesto"
+                          >
+                            ×
+                          </button>
+                        </div>
+
+                        {/* Nombre y posición en cápsula semitransparente */}
+                        <div className="mt-1 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-xs border border-white/20 text-center max-w-[100px] shadow-md">
+                          <span className="text-[10px] sm:text-[11px] font-bold text-white truncate block leading-tight">
+                            {jugador.nombre}
+                          </span>
+                          <span className="text-[8px] sm:text-[9px] text-[#3ddc84] font-semibold block uppercase">
+                            {coords.pos}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Slot Vacío */
+                      <div className={`flex flex-col items-center ${jugadorSeleccionadoId ? 'animate-pulse' : ''}`}>
+                        <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/40 border-2 border-dashed border-white/60 hover:border-[#3ddc84] hover:bg-[#3ddc84]/20 flex items-center justify-center text-white font-bold text-xs shadow-md transition-all">
+                          <span>{coords.pos}</span>
+                        </div>
+                        <div className="mt-0.5 px-1 py-0.2 rounded bg-black/50 text-[8px] text-zinc-300 font-medium">
+                          Vacío
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -824,7 +1195,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
               4. Jugadores del Rival ({rival || 'Equipo Rival'})
             </h2>
             <p className="text-xs text-[#9aa89f]">
-              Disposición táctica por defecto 4-4-2 (1; 4,2,6,3; 8,5,10,7; 11,9). Tocá y tocá otro para intercambiarlos. Doble clic para cambiar número o agregá nombres.
+              Disposición táctica. Tocá y tocá otro para intercambiarlos. Doble clic para cambiar número o agregá nombres.
             </p>
           </div>
 
@@ -877,7 +1248,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
           />
         </div>
 
-        {/* Tabla / Lista de Nombres y Dorsales del Rival (Opcional para edición rápida de nombres) */}
+        {/* Tabla / Lista de Nombres y Dorsales del Rival */}
         <div className="border-t border-[#243d2c] pt-4">
           <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
             Nombres y Apellidos de los Jugadores Rivales (Opcional)
@@ -941,71 +1312,6 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
           {iniciando ? 'INICIALIZANDO...' : 'INICIAR PARTIDO EN VIVO'}
         </button>
       </div>
-
-      {/* MODAL: Agregar Suplente a Halcones */}
-      {modalAgregarSuplenteHalcones && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl w-full max-w-md p-5 shadow-2xl relative">
-            <div className="flex items-center justify-between border-b border-[#243d2c] pb-3 mb-3">
-              <h3 className="font-display font-bold text-base text-white uppercase tracking-wider flex items-center gap-2">
-                <Users className="w-4 h-4 text-[#3ddc84]" />
-                Agregar Suplente al Banco
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalAgregarSuplenteHalcones(false)}
-                className="text-[#9aa89f] hover:text-white p-1"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-[#9aa89f] mb-3">
-              Seleccioná un jugador del plantel que aún no está convocado para sumarlo al banco de relevos:
-            </p>
-
-            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-              {jugadoresDisponiblesHalcones.length > 0 ? (
-                jugadoresDisponiblesHalcones.map(j => {
-                  const badge = getPosicionBadge(j.posicion);
-                  return (
-                    <button
-                      key={j.id}
-                      type="button"
-                      onClick={() => handleAgregarSuplenteHalcones(j.id)}
-                      className="w-full flex items-center justify-between p-2.5 bg-[#0f1712] hover:bg-[#1f3527] border border-[#243d2c] hover:border-[#3ddc84] rounded-xl text-left transition-colors cursor-pointer"
-                    >
-                      <div>
-                        <span className="text-xs font-bold text-white block">{j.nombre}</span>
-                        <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded border ${badge.bg}`}>
-                          {badge.label}
-                        </span>
-                      </div>
-                      <span className="text-xs text-[#3ddc84] font-bold flex items-center gap-1">
-                        + Agregar
-                      </span>
-                    </button>
-                  );
-                })
-              ) : (
-                <p className="text-xs text-zinc-500 py-3 text-center italic">
-                  Todos los jugadores activos del plantel ya están convocados.
-                </p>
-              )}
-            </div>
-
-            <div className="pt-3 border-t border-[#243d2c] flex justify-end mt-3">
-              <button
-                type="button"
-                onClick={() => setModalAgregarSuplenteHalcones(false)}
-                className="px-4 py-1.5 bg-transparent border border-[#243d2c] text-xs font-semibold text-zinc-400 hover:text-white rounded-lg cursor-pointer"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MODAL: Agregar Suplente Rival */}
       {modalAgregarSuplenteRival && (

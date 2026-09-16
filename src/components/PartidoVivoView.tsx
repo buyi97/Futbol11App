@@ -119,6 +119,12 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   const [modalFinalizarAbierto, setModalFinalizarAbierto] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
 
+  // Modal edición de dorsales en vivo
+  const [modalDorsalesAbierto, setModalDorsalesAbierto] = useState(false);
+  const [tabDorsales, setTabDorsales] = useState<'propio' | 'rival'>('propio');
+  const [nuevoRivalNombre, setNuevoRivalNombre] = useState('');
+  const [nuevoRivalNumero, setNuevoRivalNumero] = useState<number>(12);
+
   // Duración reglamentaria
   const duracionReglamentariaMin = draft?.partido.duracion_tiempo_min || 40;
   const segundosReglamentarios = duracionReglamentariaMin * 60;
@@ -129,6 +135,64 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   // Manejador del reloj con requestAnimationFrame y timestamp real para que no se atrase en segundo plano
   const timerRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(Date.now());
+
+  // Ajustar minutos del reloj manualmente (+1 min / -1 min)
+  const ajustarMinutosReloj = (deltaMinutos: number) => {
+    setSegundosTotales(prev => Math.max(0, prev + deltaMinutos * 60));
+  };
+
+  // Actualizar dorsal propio en vivo
+  const handleActualizarDorsalPropio = (jugadorId: string, nuevoNum: number) => {
+    if (!draft) return;
+    const convocadosActualizados = draft.convocados.map(c => {
+      if (c.jugador_id === jugadorId) {
+        return { ...c, numero: nuevoNum };
+      }
+      return c;
+    });
+    const nuevoDraft = { ...draft, convocados: convocadosActualizados };
+    setDraft(nuevoDraft);
+    StorageService.savePartidoEnVivo(nuevoDraft);
+  };
+
+  // Actualizar dorsal y nombre rival en vivo
+  const handleActualizarRival = (rivalId: string, nuevoNum: number, nuevoNombre?: string) => {
+    if (!draft) return;
+    const rivalesActualizados = draft.rivales.map(r => {
+      if (r.id === rivalId || String(r.numero) === rivalId) {
+        return { 
+          ...r, 
+          numero: nuevoNum, 
+          nombre: nuevoNombre !== undefined ? nuevoNombre : r.nombre 
+        };
+      }
+      return r;
+    });
+    const nuevoDraft = { ...draft, rivales: rivalesActualizados };
+    setDraft(nuevoDraft);
+    StorageService.savePartidoEnVivo(nuevoDraft);
+  };
+
+  // Agregar nuevo jugador rival en vivo
+  const handleAgregarRivalEnVivo = () => {
+    if (!draft) return;
+    const nuevoR: RivalJugador = {
+      id: 'riv-vivo-' + Date.now(),
+      partido_id: draft.partido.id,
+      numero: Number(nuevoRivalNumero) || (draft.rivales.length + 1),
+      nombre: nuevoRivalNombre.trim() || `Rival #${nuevoRivalNumero || draft.rivales.length + 1}`,
+      posicion_tactica: 'RIV',
+      titular: false,
+      tactica_x: 50,
+      tactica_y: 50
+    };
+    const rivalesActualizados = [...draft.rivales, nuevoR];
+    const nuevoDraft = { ...draft, rivales: rivalesActualizados };
+    setDraft(nuevoDraft);
+    StorageService.savePartidoEnVivo(nuevoDraft);
+    setNuevoRivalNombre('');
+    setNuevoRivalNumero(draft.rivales.length + 2);
+  };
 
   useEffect(() => {
     if (corriendo) {
@@ -257,6 +321,13 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
       return;
     }
 
+    // Si es 2ª amarilla, restringir obligatoriamente al modo Lista
+    if (tipo === 'doble_amarilla') {
+      setVistaCancha(false);
+    } else {
+      setVistaCancha(true);
+    }
+
     setTipoSeleccionado(tipo);
     setEquipoIncidencia('propio');
     setFiltroBuscador('');
@@ -351,6 +422,29 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     onPartidoFinalizado(draft.partido.id);
   };
 
+  // Tarjetas acumuladas y expulsiones
+  const amarillasPropias = new Map<string, number>();
+  const amarillasRivales = new Map<string, number>();
+  const expulsadosPropiosIds = new Set<string>();
+  const expulsadosRivalesIds = new Set<string>();
+
+  incidencias.forEach(inc => {
+    if (inc.tipo === 'amarilla') {
+      if (inc.equipo === 'propio') {
+        amarillasPropias.set(inc.jugador_id, (amarillasPropias.get(inc.jugador_id) || 0) + 1);
+      } else {
+        const idR = String(inc.jugador_id);
+        amarillasRivales.set(idR, (amarillasRivales.get(idR) || 0) + 1);
+      }
+    } else if (inc.tipo === 'doble_amarilla' || inc.tipo === 'roja_directa') {
+      if (inc.equipo === 'propio') {
+        expulsadosPropiosIds.add(inc.jugador_id);
+      } else {
+        expulsadosRivalesIds.add(String(inc.jugador_id));
+      }
+    }
+  });
+
   // Listas de convocados para el selector
   const titulares = draft.convocados.filter(c => c.titular);
   const suplentes = draft.convocados.filter(c => !c.titular);
@@ -366,8 +460,15 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     }
   });
 
+  // Los jugadores expulsados DESAPARECEN de la cancha activa
+  expulsadosPropiosIds.forEach(id => {
+    jugadoresEnCanchaIds.delete(id);
+  });
+
   const jugadoresEnBancoIds = new Set<string>(
-    draft.convocados.map(c => c.jugador_id).filter(id => !jugadoresEnCanchaIds.has(id))
+    draft.convocados
+      .map(c => c.jugador_id)
+      .filter(id => !jugadoresEnCanchaIds.has(id) && !expulsadosPropiosIds.has(id))
   );
 
   // Preparar disposición táctica para el modal (Equipo Propio)
@@ -375,8 +476,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     ? FORMACIONES_DISPONIBLES[draft.partido.formacion_propia] 
     : FORMACIONES_DISPONIBLES['4-3-3'];
 
-  const convocadosEnCancha = draft.convocados.filter(c => jugadoresEnCanchaIds.has(c.jugador_id));
-  const convocadosEnBanco = draft.convocados.filter(c => jugadoresEnBancoIds.has(c.jugador_id));
+  const convocadosEnCancha = draft.convocados.filter(c => jugadoresEnCanchaIds.has(c.jugador_id) && !expulsadosPropiosIds.has(c.jugador_id));
+  const convocadosEnBanco = draft.convocados.filter(c => jugadoresEnBancoIds.has(c.jugador_id) && !expulsadosPropiosIds.has(c.jugador_id));
 
   const jugadoresCanchaPropia: JugadorEnCancha[] = convocadosEnCancha.map((c, idx) => {
     const jug = jugadoresMap.get(c.jugador_id);
@@ -412,7 +513,11 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     ? FORMACIONES_DISPONIBLES[draft.partido.formacion_rival] 
     : FORMACIONES_DISPONIBLES['4-3-3'];
 
-  const jugadoresCanchaRival: JugadorEnCancha[] = draft.rivales.map((r, idx) => {
+  const rivalesActivos = draft.rivales.filter(r => 
+    !expulsadosRivalesIds.has(String(r.numero)) && !expulsadosRivalesIds.has(r.id)
+  );
+
+  const jugadoresCanchaRival: JugadorEnCancha[] = rivalesActivos.map((r, idx) => {
     const coords = r.tactica_x !== undefined && r.tactica_y !== undefined 
       ? { x: r.tactica_x, y: r.tactica_y } 
       : (presetR[idx] || { x: 50, y: 50 });
@@ -473,8 +578,30 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
               {formatTimeDigital(minutosReloj, segundosReloj)}
             </div>
 
+            {/* Ajuste Rápido del Reloj (+1 min / -1 min) */}
+            <div className="flex items-center justify-center gap-1.5 mt-1">
+              <button
+                type="button"
+                id="btn-timer-minus-one"
+                onClick={() => ajustarMinutosReloj(-1)}
+                className="px-2 py-0.5 rounded-lg bg-[#182a1f] border border-[#243d2c] hover:border-[#e63946] text-[#9aa89f] hover:text-white text-[11px] font-bold cursor-pointer transition-colors active:scale-95"
+                title="Restar 1 minuto (-1')"
+              >
+                -1'
+              </button>
+              <button
+                type="button"
+                id="btn-timer-plus-one"
+                onClick={() => ajustarMinutosReloj(1)}
+                className="px-2 py-0.5 rounded-lg bg-[#182a1f] border border-[#243d2c] hover:border-[#3ddc84] text-[#9aa89f] hover:text-white text-[11px] font-bold cursor-pointer transition-colors active:scale-95"
+                title="Sumar 1 minuto (+1')"
+              >
+                +1'
+              </button>
+            </div>
+
             {tiempoExcedido && (
-              <span className="text-[10px] text-[#ffb703] font-semibold animate-pulse">
+              <span className="text-[10px] text-[#ffb703] font-semibold animate-pulse mt-0.5">
                 +{minutosExcedidos}' Agregado
               </span>
             )}
@@ -528,6 +655,17 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
             <Clock className="w-4 h-4 text-[#ffb703]" />
             <span className="hidden sm:inline">Descuento</span>
             <span className="text-[#ffb703]">+{agregadoActualMin}'</span>
+          </button>
+
+          {/* Editar Dorsales en Vivo */}
+          <button
+            id="btn-timer-edit-dorsales"
+            onClick={() => setModalDorsalesAbierto(true)}
+            className="py-3 px-3 bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84]/60 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0 transition-all"
+            title="Editar dorsales y nombres de jugadores"
+          >
+            <Shield className="w-4 h-4 text-[#3ddc84]" />
+            <span className="hidden sm:inline">Dorsales</span>
           </button>
 
           {/* Pasar al 2do Tiempo */}
@@ -584,7 +722,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
               <span className="font-display font-bold text-base text-[#3ddc84] block leading-tight">
                 GOL
               </span>
-              <span className="text-[10px] text-[#9aa89f]">Propio o Rival</span>
+              <span className="text-[10px] text-[#9aa89f]">{nombreClub} o {draft.partido.rival}</span>
             </div>
           </button>
 
@@ -802,7 +940,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                           <>Córner para {esPropio ? nombreClub : draft.partido.rival}</>
                         ) : esPropio ? (
                           <>
-                            #{convocadoObj?.numero || jugadorObj?.numero} {jugadorObj?.nombre || 'Jugador del plantel'}
+                            #{convocadoObj?.numero || jugadorObj?.numero} {jugadorObj?.nombre || 'Jugador'}
                             {asistObj && (
                               <span className="text-[#3ddc84] ml-1">
                                 (Asistencia: #{convocadoAsist?.numero || asistObj.numero} {asistObj.nombre})
@@ -812,9 +950,9 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                         ) : (
                           <>
                             {rivalObj?.nombre ? (
-                              <strong className="text-white">{rivalObj.nombre} (Dorsal #{rivalObj.numero})</strong>
+                              <strong className="text-white">#{rivalObj.numero} {rivalObj.nombre}</strong>
                             ) : (
-                              <>Jugador #{rivalObj?.numero || (inc.jugador_id && inc.jugador_id !== 'undefined' ? inc.jugador_id : '')} del rival</>
+                              <>#{rivalObj?.numero || (inc.jugador_id && inc.jugador_id !== 'undefined' ? inc.jugador_id : '')} {draft.partido.rival}</>
                             )}
                           </>
                         )}
@@ -873,7 +1011,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                 <span className="text-2xl">⚽</span>
                 <div className="text-left">
                   <span className="font-display font-bold text-sm text-[#3ddc84] block">
-                    {nombreClub} (Propio)
+                    {nombreClub}
                   </span>
                   <span className="text-[11px] text-[#9aa89f]">Córner a favor</span>
                 </div>
@@ -887,7 +1025,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                 <span className="text-2xl">🛡️</span>
                 <div className="text-left">
                   <span className="font-display font-bold text-sm text-[#ffb703] block">
-                    {draft.partido.rival} (Rival)
+                    {draft.partido.rival}
                   </span>
                   <span className="text-[11px] text-[#9aa89f]">Córner del rival</span>
                 </div>
@@ -947,7 +1085,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
                   }`}
                 >
-                  {nombreClub} (Propio)
+                  {nombreClub}
                 </button>
                 <button
                   type="button"
@@ -958,41 +1096,49 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
                   }`}
                 >
-                  {draft.partido.rival} (Rival)
+                  {draft.partido.rival}
                 </button>
               </div>
             )}
 
-            {/* Selector de modo visual: Cancha Táctica vs Lista */}
+            {/* Selector de modo visual: Formación vs Lista */}
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-semibold text-[#9aa89f]">
-                {pasoAsistencia 
+                {tipoSeleccionado === 'doble_amarilla'
+                  ? 'Seleccioná el jugador con 1 amarilla previa:'
+                  : pasoAsistencia 
                   ? 'Tocá el asistidor o elegí gol individual:'
                   : tipoSeleccionado === 'cambio' && pasoSustitucion === 2 
                   ? 'Elegí el suplente que ingresa a la cancha:' 
                   : 'Tocá el jugador en la cancha o en la lista:'}
               </span>
 
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setVistaCancha(true)}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                    vistaCancha ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-[#3ddc84]' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
-                  }`}
-                >
-                  ⚽ Cancha Táctica
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVistaCancha(false)}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                    !vistaCancha ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-[#3ddc84]' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
-                  }`}
-                >
-                  📋 Lista
-                </button>
-              </div>
+              {tipoSeleccionado !== 'doble_amarilla' ? (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setVistaCancha(true)}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                      vistaCancha ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-[#3ddc84]' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
+                    }`}
+                  >
+                    ⚽ Formación
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVistaCancha(false)}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                      !vistaCancha ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-[#3ddc84]' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
+                    }`}
+                  >
+                    📋 Lista
+                  </button>
+                </div>
+              ) : (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Modo Lista Exclusivo
+                </span>
+              )}
             </div>
 
             {/* Si estamos en paso de asistencia, botón para "Sin Asistencia" */}
@@ -1008,8 +1154,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
             {/* Contenido: Cancha o Lista */}
             <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[380px] pr-1">
-              {vistaCancha ? (
-                // ================= VISTA CANCHA TÁCTICA =================
+              {vistaCancha && tipoSeleccionado !== 'doble_amarilla' ? (
+                // ================= VISTA FORMACIÓN =================
                 <div className="py-1">
                   {equipoIncidencia === 'propio' ? (
                     <TacticaCancha
@@ -1028,6 +1174,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       mostrarSuplentes={tipoSeleccionado !== 'cambio' || pasoSustitucion === 2}
                       colorEquipo="verde"
                       modoInteractivo={true}
+                      editableDorsales={true}
+                      onEditarNumero={(id, num) => handleActualizarDorsalPropio(id, num)}
                       onSeleccionarJugador={(idOrObj, obj) => {
                         const targetId = typeof idOrObj === 'object' && idOrObj !== null 
                           ? (idOrObj as any).id 
@@ -1076,6 +1224,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       jugadores={jugadoresCanchaRival}
                       colorEquipo="amarillo"
                       modoInteractivo={true}
+                      editableDorsales={true}
+                      onEditarNumero={(id, num) => handleActualizarRival(id, num)}
                       onSeleccionarJugador={(idOrObj, obj) => {
                         const num = typeof idOrObj === 'object' && idOrObj !== null 
                           ? String((idOrObj as any).numero) 
@@ -1109,92 +1259,176 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
                   <div className="space-y-1.5">
                     {equipoIncidencia === 'propio' ? (
-                      (tipoSeleccionado === 'cambio' && pasoSustitucion === 1
-                        ? draft.convocados.filter(c => jugadoresEnCanchaIds.has(c.jugador_id))
-                        : tipoSeleccionado === 'cambio' && pasoSustitucion === 2
-                        ? draft.convocados.filter(c => jugadoresEnBancoIds.has(c.jugador_id) && c.jugador_id !== jugadorSaleId)
-                        : pasoAsistencia
-                        ? draft.convocados.filter(c => c.jugador_id !== goleadorId)
-                        : draft.convocados
-                      ).map(c => {
-                        const jug = jugadoresMap.get(c.jugador_id);
-                        if (!jug) return null;
-                        if (
-                          filtroBuscador &&
-                          !jug.nombre.toLowerCase().includes(filtroBuscador.toLowerCase()) &&
-                          !String(c.numero || jug.numero).includes(filtroBuscador)
-                        ) {
-                          return null;
+                      (() => {
+                        // Jugadores elegibles para la acción seleccionada
+                        let convocadosFiltrados = draft.convocados;
+
+                        if (tipoSeleccionado === 'doble_amarilla') {
+                          // Solo jugadores que tengan exactamente 1 amarilla acumulada y no estén expulsados
+                          convocadosFiltrados = draft.convocados.filter(c => 
+                            amarillasPropias.get(c.jugador_id) === 1 && !expulsadosPropiosIds.has(c.jugador_id)
+                          );
+                        } else if (tipoSeleccionado === 'cambio' && pasoSustitucion === 1) {
+                          convocadosFiltrados = draft.convocados.filter(c => 
+                            jugadoresEnCanchaIds.has(c.jugador_id) && !expulsadosPropiosIds.has(c.jugador_id)
+                          );
+                        } else if (tipoSeleccionado === 'cambio' && pasoSustitucion === 2) {
+                          convocadosFiltrados = draft.convocados.filter(c => 
+                            jugadoresEnBancoIds.has(c.jugador_id) && c.jugador_id !== jugadorSaleId && !expulsadosPropiosIds.has(c.jugador_id)
+                          );
+                        } else if (pasoAsistencia) {
+                          convocadosFiltrados = draft.convocados.filter(c => 
+                            c.jugador_id !== goleadorId && !expulsadosPropiosIds.has(c.jugador_id)
+                          );
+                        } else {
+                          // Cualquier otra acción: excluir expulsados
+                          convocadosFiltrados = draft.convocados.filter(c => !expulsadosPropiosIds.has(c.jugador_id));
                         }
 
-                        return (
-                          <button
-                            key={jug.id}
-                            type="button"
-                            onClick={() => {
-                              if (pasoAsistencia) {
-                                confirmarGuardadoIncidencia(goleadorId!, undefined, jug.id);
-                              } else if (tipoSeleccionado === 'gol' && equipoIncidencia === 'propio') {
-                                setGoleadorId(jug.id);
-                                setPasoAsistencia(true);
-                              } else if (tipoSeleccionado === 'cambio') {
-                                if (pasoSustitucion === 1) {
-                                  setJugadorSaleId(jug.id);
-                                  setPasoSustitucion(2);
-                                  setFiltroBuscador('');
+                        if (convocadosFiltrados.length === 0) {
+                          return (
+                            <div className="p-4 rounded-xl bg-[#0f1712] border border-amber-500/30 text-center my-2">
+                              <AlertTriangle className="w-5 h-5 text-amber-400 mx-auto mb-1.5" />
+                              <p className="text-xs text-amber-300 font-semibold">
+                                {tipoSeleccionado === 'doble_amarilla' 
+                                  ? `Ningún jugador de ${nombreClub} tiene 1 tarjeta amarilla previa para registrar una 2ª amarilla.`
+                                  : `No hay jugadores disponibles de ${nombreClub} para esta acción.`}
+                              </p>
+                              {tipoSeleccionado === 'doble_amarilla' && (
+                                <p className="text-[11px] text-[#9aa89f] mt-1">
+                                  La 2ª amarilla sólo se puede aplicar a futbolistas que ya cuenten con 1 amonestación previa en el partido.
+                                </p>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        return convocadosFiltrados.map(c => {
+                          const jug = jugadoresMap.get(c.jugador_id);
+                          if (!jug) return null;
+                          if (
+                            filtroBuscador &&
+                            !jug.nombre.toLowerCase().includes(filtroBuscador.toLowerCase()) &&
+                            !String(c.numero || jug.numero).includes(filtroBuscador)
+                          ) {
+                            return null;
+                          }
+
+                          return (
+                            <button
+                              key={jug.id}
+                              type="button"
+                              onClick={() => {
+                                if (pasoAsistencia) {
+                                  confirmarGuardadoIncidencia(goleadorId!, undefined, jug.id);
+                                } else if (tipoSeleccionado === 'gol' && equipoIncidencia === 'propio') {
+                                  setGoleadorId(jug.id);
+                                  setPasoAsistencia(true);
+                                } else if (tipoSeleccionado === 'cambio') {
+                                  if (pasoSustitucion === 1) {
+                                    setJugadorSaleId(jug.id);
+                                    setPasoSustitucion(2);
+                                    setFiltroBuscador('');
+                                  } else {
+                                    confirmarGuardadoIncidencia(jugadorSaleId!, jug.id);
+                                  }
                                 } else {
-                                  confirmarGuardadoIncidencia(jugadorSaleId!, jug.id);
+                                  confirmarGuardadoIncidencia(jug.id);
                                 }
-                              } else {
-                                confirmarGuardadoIncidencia(jug.id);
-                              }
-                            }}
-                            className="w-full p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] hover:bg-[#243d2c]/40 transition-all flex items-center justify-between text-left cursor-pointer group"
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <span className="font-display font-bold text-base text-[#3ddc84] w-8 h-8 rounded-lg bg-[#182a1f] flex items-center justify-center shrink-0">
-                                #{c.numero || jug.numero}
-                              </span>
-                              <div>
-                                <span className="text-xs font-semibold text-white group-hover:text-[#3ddc84] transition-colors block">
-                                  {jug.nombre}
+                              }}
+                              className="w-full p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] hover:bg-[#243d2c]/40 transition-all flex items-center justify-between text-left cursor-pointer group"
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <span className="font-display font-bold text-base text-[#3ddc84] w-8 h-8 rounded-lg bg-[#182a1f] flex items-center justify-center shrink-0">
+                                  #{c.numero || jug.numero}
                                 </span>
-                                <span className="text-[10px] text-[#9aa89f]">
-                                  {c.posicion_tactica || jug.posicion}
-                                </span>
+                                <div>
+                                  <span className="text-xs font-semibold text-white group-hover:text-[#3ddc84] transition-colors block">
+                                    {jug.nombre}
+                                  </span>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-[10px] text-[#9aa89f]">
+                                      {c.posicion_tactica || jug.posicion}
+                                    </span>
+                                    {amarillasPropias.get(c.jugador_id) === 1 && (
+                                      <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
+                                        1ª Amarilla previa
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-[#9aa89f] group-hover:text-white" />
-                          </button>
-                        );
-                      })
+                              <ChevronRight className="w-4 h-4 text-[#9aa89f] group-hover:text-white" />
+                            </button>
+                          );
+                        });
+                      })()
                     ) : (
-                      draft.rivales
-                        .filter(r => 
-                          !filtroBuscador || 
-                          String(r.numero).includes(filtroBuscador) || 
-                          r.nombre.toLowerCase().includes(filtroBuscador.toLowerCase())
-                        )
-                        .map(r => (
-                          <button
-                            key={r.id}
-                            type="button"
-                            onClick={() => confirmarGuardadoIncidencia(String(r.numero))}
-                            className="w-full p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#ffb703] hover:bg-[#243d2c]/40 transition-all flex items-center justify-between text-left cursor-pointer group"
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <span className="font-display font-bold text-base text-[#ffb703] w-8 h-8 rounded-lg bg-[#182a1f] flex items-center justify-center shrink-0">
-                                #{r.numero}
-                              </span>
-                              <div>
-                                <span className="text-xs font-semibold text-white group-hover:text-[#ffb703] transition-colors block">
-                                  {r.nombre ? r.nombre : `Rival Dorsal #${r.numero}`}
-                                </span>
-                              </div>
+                      (() => {
+                        let rivalesFiltrados = draft.rivales;
+
+                        if (tipoSeleccionado === 'doble_amarilla') {
+                          rivalesFiltrados = draft.rivales.filter(r => 
+                            (amarillasRivales.get(String(r.numero)) === 1 || amarillasRivales.get(r.id) === 1) &&
+                            !expulsadosRivalesIds.has(String(r.numero)) &&
+                            !expulsadosRivalesIds.has(r.id)
+                          );
+                        } else {
+                          rivalesFiltrados = draft.rivales.filter(r => 
+                            !expulsadosRivalesIds.has(String(r.numero)) && !expulsadosRivalesIds.has(r.id)
+                          );
+                        }
+
+                        if (rivalesFiltrados.length === 0) {
+                          return (
+                            <div className="p-4 rounded-xl bg-[#0f1712] border border-amber-500/30 text-center my-2">
+                              <AlertTriangle className="w-5 h-5 text-amber-400 mx-auto mb-1.5" />
+                              <p className="text-xs text-amber-300 font-semibold">
+                                {tipoSeleccionado === 'doble_amarilla'
+                                  ? `Ningún jugador de ${draft.partido.rival} tiene 1 tarjeta amarilla previa para registrar una 2ª amarilla.`
+                                  : `No hay jugadores rivales disponibles.`}
+                              </p>
+                              {tipoSeleccionado === 'doble_amarilla' && (
+                                <p className="text-[11px] text-[#9aa89f] mt-1">
+                                  La 2ª amarilla sólo se puede aplicar a futbolistas que ya cuenten con 1 amonestación previa en el partido.
+                                </p>
+                              )}
                             </div>
-                            <ChevronRight className="w-4 h-4 text-[#9aa89f] group-hover:text-white" />
-                          </button>
-                        ))
+                          );
+                        }
+
+                        return rivalesFiltrados
+                          .filter(r => 
+                            !filtroBuscador || 
+                            String(r.numero).includes(filtroBuscador) || 
+                            r.nombre.toLowerCase().includes(filtroBuscador.toLowerCase())
+                          )
+                          .map(r => (
+                            <button
+                              key={r.id}
+                              type="button"
+                              onClick={() => confirmarGuardadoIncidencia(String(r.numero))}
+                              className="w-full p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#ffb703] hover:bg-[#243d2c]/40 transition-all flex items-center justify-between text-left cursor-pointer group"
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <span className="font-display font-bold text-base text-[#ffb703] w-8 h-8 rounded-lg bg-[#182a1f] flex items-center justify-center shrink-0">
+                                  #{r.numero}
+                                </span>
+                                <div>
+                                  <span className="text-xs font-semibold text-white group-hover:text-[#ffb703] transition-colors block">
+                                    {r.nombre ? r.nombre : `Dorsal #${r.numero}`}
+                                  </span>
+                                  {(amarillasRivales.get(String(r.numero)) === 1 || amarillasRivales.get(r.id) === 1) && (
+                                    <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
+                                      1ª Amarilla previa
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-[#9aa89f] group-hover:text-white" />
+                            </button>
+                          ));
+                      })()
                     )}
                   </div>
                 </div>

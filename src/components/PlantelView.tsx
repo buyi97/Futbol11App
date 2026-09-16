@@ -15,12 +15,17 @@ import {
   ShieldAlert, 
   Filter,
   Save,
-  X
+  X,
+  LayoutGrid,
+  Star,
+  Check,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { Jugador, PosicionJugador, RolUsuario } from '../types';
 import { getPosicionBadge } from '../utils/footballCalculations';
 import { ApiService } from '../services/api';
-
+import { FORMACIONES_DISPONIBLES } from '../utils/formations';
 import { StorageService } from '../services/storage';
 
 interface PlantelViewProps {
@@ -54,6 +59,21 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
   });
   const [errorModal, setErrorModal] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+
+  // Configuración Táctica y 11 Titular por Defecto
+  const [modalTacticaAbierto, setModalTacticaAbierto] = useState(false);
+  const [formacionPredeterminada, setFormacionPredeterminada] = useState<string>(
+    () => StorageService.getFormacionPredeterminada() || '4-3-3'
+  );
+  const [titularesTemp, setTitularesTemp] = useState<string[]>(
+    () => StorageService.getTitularesPredeterminados()
+  );
+  const [guardandoTactica, setGuardandoTactica] = useState(false);
+  const [mensajeExito, setMensajeExito] = useState<string | null>(null);
+
+  // Edición rápida de dorsal inline en la tarjeta
+  const [editandoDorsalId, setEditandoDorsalId] = useState<string | null>(null);
+  const [dorsalTemp, setDorsalTemp] = useState<string>('');
 
   const esEditor = rol === 'editor';
 
@@ -101,12 +121,44 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
     onActualizarJugadores();
   };
 
+  const handleGuardarDorsalRapido = async (jugador: Jugador, nuevoNumeroStr: string) => {
+    const num = parseInt(nuevoNumeroStr, 10);
+    const numeroValido = !isNaN(num) && num >= 1 && num <= 99 ? num : undefined;
+    const actualizado: Jugador = { ...jugador, numero: numeroValido };
+    await ApiService.guardarJugador(actualizado);
+    setEditandoDorsalId(null);
+    onActualizarJugadores();
+  };
+
+  const handleToggleTitularPredeterminado = (id: string) => {
+    if (titularesTemp.includes(id)) {
+      setTitularesTemp(titularesTemp.filter(t => t !== id));
+    } else {
+      if (titularesTemp.length >= 11) {
+        return; // Máximo 11 titulares
+      }
+      setTitularesTemp([...titularesTemp, id]);
+    }
+  };
+
+  const handleGuardarTacticaPredeterminada = () => {
+    setGuardandoTactica(true);
+    StorageService.saveFormacionPredeterminada(formacionPredeterminada);
+    StorageService.saveTitularesPredeterminados(titularesTemp);
+    setGuardandoTactica(false);
+    setModalTacticaAbierto(false);
+    setMensajeExito('Formación táctica y 11 titular predeterminados guardados con éxito');
+    setTimeout(() => setMensajeExito(null), 3500);
+  };
+
   const handleToggleActivo = async (jugador: Jugador) => {
     if (!esEditor) return;
     const actualizado = { ...jugador, activo: !jugador.activo };
     await ApiService.guardarJugador(actualizado);
     onActualizarJugadores();
   };
+
+  const titularesGuardados = StorageService.getTitularesPredeterminados();
 
   // Filtrado
   const jugadoresFiltrados = jugadores.filter(j => {
@@ -133,21 +185,45 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-[#9aa89f] mt-0.5">
-            Jugadores registrados para {nombreClub} ({jugadores.filter(j => j.activo).length} activos). Los dorsales se asignan para cada partido.
+            Jugadores registrados para {nombreClub} ({jugadores.filter(j => j.activo).length} activos). Configura dorsales fijos y el 11 titular por defecto.
           </p>
         </div>
 
         {esEditor && (
-          <button
-            id="btn-agregar-jugador"
-            onClick={abrirModalNuevo}
-            className="px-4 py-2.5 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold font-display text-sm tracking-wider rounded-xl shadow-lg shadow-[#3ddc84]/20 flex items-center justify-center gap-2 cursor-pointer transition-all shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            AGREGAR JUGADOR
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              id="btn-configurar-tactica-default"
+              type="button"
+              onClick={() => {
+                setTitularesTemp(StorageService.getTitularesPredeterminados());
+                setFormacionPredeterminada(StorageService.getFormacionPredeterminada() || '4-3-3');
+                setModalTacticaAbierto(true);
+              }}
+              className="px-3.5 py-2.5 bg-[#0f1712] hover:bg-[#182a1f] border border-[#243d2c] hover:border-[#3ddc84]/60 text-white font-bold text-xs tracking-wider rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm"
+              title="Configurar formación táctica y 11 inicial por defecto"
+            >
+              <LayoutGrid className="w-4 h-4 text-[#3ddc84]" />
+              <span>11 TITULAR Y ESQUEMA BASE</span>
+            </button>
+
+            <button
+              id="btn-agregar-jugador"
+              onClick={abrirModalNuevo}
+              className="px-4 py-2.5 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold font-display text-sm tracking-wider rounded-xl shadow-lg shadow-[#3ddc84]/20 flex items-center justify-center gap-2 cursor-pointer transition-all shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              AGREGAR JUGADOR
+            </button>
+          </div>
         )}
       </div>
+
+      {mensajeExito && (
+        <div className="p-3 bg-[#3ddc84]/15 border border-[#3ddc84]/40 rounded-xl text-xs sm:text-sm text-[#3ddc84] flex items-center gap-2 animate-fadeIn">
+          <Check className="w-4 h-4 shrink-0" />
+          <span>{mensajeExito}</span>
+        </div>
+      )}
 
       {/* Barra de Filtros y Búsqueda */}
       <div className="bg-[#182a1f] border border-[#243d2c] rounded-xl p-3 sm:p-4 flex flex-col md:flex-row items-center gap-3">
@@ -201,36 +277,82 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
         {jugadoresFiltrados.length > 0 ? (
           jugadoresFiltrados.map((jugador) => {
             const badge = getPosicionBadge(jugador.posicion);
+            const esTitularDefault = titularesGuardados.includes(jugador.id);
+            const estaEditandoDorsal = editandoDorsalId === jugador.id;
 
             return (
               <div
                 key={jugador.id}
                 className={`p-4 rounded-xl border transition-all flex flex-col justify-between ${
                   jugador.activo
-                    ? 'bg-[#182a1f] border-[#243d2c] hover:border-[#3ddc84]/50 shadow-md'
+                    ? esTitularDefault
+                      ? 'bg-[#182a1f] border-[#3ddc84]/60 shadow-md ring-1 ring-[#3ddc84]/30'
+                      : 'bg-[#182a1f] border-[#243d2c] hover:border-[#3ddc84]/50 shadow-md'
                     : 'bg-[#182a1f]/40 border-[#243d2c]/50 opacity-60'
                 }`}
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-display font-bold text-xs text-[#3ddc84] bg-[#3ddc84]/15 border border-[#3ddc84]/30 px-2 py-0.5 rounded-md">
-                        #{jugador.numero !== undefined && jugador.numero !== null ? jugador.numero : '-'}
-                      </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Dorsal con edición rápida */}
+                      {estaEditandoDorsal ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            autoFocus
+                            value={dorsalTemp}
+                            onChange={(e) => setDorsalTemp(e.target.value)}
+                            onBlur={() => handleGuardarDorsalRapido(jugador, dorsalTemp)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleGuardarDorsalRapido(jugador, dorsalTemp);
+                              if (e.key === 'Escape') setEditandoDorsalId(null);
+                            }}
+                            className="w-10 h-6 px-1 bg-[#0f1712] border border-[#3ddc84] rounded text-center text-xs font-bold text-[#3ddc84] focus:outline-none"
+                          />
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!esEditor) return;
+                            setDorsalTemp(jugador.numero !== undefined && jugador.numero !== null ? String(jugador.numero) : '');
+                            setEditandoDorsalId(jugador.id);
+                          }}
+                          className={`font-display font-bold text-xs px-2 py-0.5 rounded-md border transition-colors flex items-center gap-1 ${
+                            jugador.numero !== undefined && jugador.numero !== null
+                              ? 'text-[#3ddc84] bg-[#3ddc84]/15 border-[#3ddc84]/30 hover:border-[#3ddc84]'
+                              : 'text-zinc-400 bg-zinc-800/60 border-zinc-700 hover:border-zinc-500'
+                          }`}
+                          title={esEditor ? "Clic para editar dorsal permanente" : undefined}
+                        >
+                          <span>#{jugador.numero !== undefined && jugador.numero !== null ? jugador.numero : '-'}</span>
+                          {esEditor && <Edit2 className="w-2.5 h-2.5 opacity-60" />}
+                        </button>
+                      )}
+
                       <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${badge.bg}`}>
                         {badge.label}
                       </span>
+
+                      {esTitularDefault && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#3ddc84]/20 border border-[#3ddc84]/40 text-[#3ddc84] flex items-center gap-0.5" title="Titular en el 11 base predeterminado">
+                          <Star className="w-2.5 h-2.5 fill-[#3ddc84]" />
+                          Titular 11
+                        </span>
+                      )}
                     </div>
 
                     <span
-                      className={`w-2 h-2 rounded-full ${
+                      className={`w-2 h-2 rounded-full shrink-0 ${
                         jugador.activo ? 'bg-[#3ddc84]' : 'bg-[#e63946]'
                       }`}
                       title={jugador.activo ? 'Activo' : 'Inactivo'}
                     />
                   </div>
 
-                  <h3 className="font-semibold text-lg text-white truncate">
+                  <h3 className="font-semibold text-lg text-white truncate" title={jugador.nombre}>
                     {jugador.nombre}
                   </h3>
                   <p className="text-xs text-[#9aa89f] mt-0.5">
@@ -279,6 +401,149 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modal Configurar Táctica y 11 Titular Base */}
+      {modalTacticaAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl w-full max-w-2xl p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
+            <button
+              onClick={() => setModalTacticaAbierto(false)}
+              className="absolute top-4 right-4 text-[#9aa89f] hover:text-white p-1 rounded-lg"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="mb-4">
+              <div className="flex items-center gap-2">
+                <LayoutGrid className="w-5 h-5 text-[#3ddc84]" />
+                <h2 className="font-display font-bold text-xl text-white uppercase tracking-wider">
+                  11 Titular y Esquema por Defecto
+                </h2>
+              </div>
+              <p className="text-xs text-[#9aa89f] mt-1">
+                Esta configuración se cargará automáticamente al armar un &quot;Nuevo Partido&quot;.
+              </p>
+            </div>
+
+            <div className="space-y-4 overflow-y-auto flex-1 pr-1">
+              {/* Selector de esquema táctico */}
+              <div>
+                <label className="block text-xs font-semibold text-[#9aa89f] uppercase mb-1.5">
+                  Formación Táctica Predeterminada
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {Object.keys(FORMACIONES_DISPONIBLES).map((esq) => (
+                    <button
+                      key={esq}
+                      type="button"
+                      onClick={() => setFormacionPredeterminada(esq)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                        formacionPredeterminada === esq
+                          ? 'bg-[#3ddc84] text-[#0f1712] border-[#3ddc84]'
+                          : 'bg-[#0f1712] border-[#243d2c] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {esq}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Selector de los 11 titulares */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-[#9aa89f] uppercase">
+                    Seleccionar los 11 Titulares Base ({titularesTemp.length}/11)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const activosIds = jugadores.filter(j => j.activo).slice(0, 11).map(j => j.id);
+                        setTitularesTemp(activosIds);
+                      }}
+                      className="text-[11px] text-[#3ddc84] hover:underline"
+                    >
+                      Primeros 11
+                    </button>
+                    <span className="text-zinc-600">•</span>
+                    <button
+                      type="button"
+                      onClick={() => setTitularesTemp([])}
+                      className="text-[11px] text-zinc-400 hover:text-white hover:underline"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[320px] overflow-y-auto p-1">
+                  {jugadores.filter(j => j.activo).map((j) => {
+                    const esTitular = titularesTemp.includes(j.id);
+                    const badge = getPosicionBadge(j.posicion);
+
+                    return (
+                      <button
+                        key={j.id}
+                        type="button"
+                        onClick={() => handleToggleTitularPredeterminado(j.id)}
+                        className={`p-2.5 rounded-xl border text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                          esTitular
+                            ? 'bg-[#3ddc84]/15 border-[#3ddc84] text-white shadow-sm'
+                            : 'bg-[#0f1712] border-[#243d2c] text-zinc-300 hover:border-zinc-600'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                            esTitular ? 'bg-[#3ddc84] text-[#0f1712]' : 'bg-zinc-800 text-zinc-400'
+                          }`}>
+                            {j.numero !== undefined && j.numero !== null ? j.numero : '-'}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="font-semibold text-xs truncate block">
+                              {j.nombre}
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded border ${badge.bg}`}>
+                              {badge.label}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="shrink-0">
+                          {esTitular ? (
+                            <CheckSquare className="w-5 h-5 text-[#3ddc84]" />
+                          ) : (
+                            <Square className="w-5 h-5 text-zinc-600" />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-4 mt-2 border-t border-[#243d2c]">
+              <button
+                type="button"
+                onClick={() => setModalTacticaAbierto(false)}
+                className="px-4 py-2.5 bg-[#0f1712] text-sm text-[#9aa89f] hover:text-white rounded-xl border border-[#243d2c]"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGuardarTacticaPredeterminada}
+                disabled={guardandoTactica}
+                className="px-5 py-2.5 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold font-display text-sm tracking-wider rounded-xl shadow-lg flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                GUARDAR CONFIGURACIÓN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Alta / Edición de Jugador */}
       {modalAbierto && (

@@ -43,6 +43,9 @@ interface EstadisticasViewProps {
 }
 
 type CampoOrden = 
+  | 'numero'
+  | 'nombre'
+  | 'posicion'
   | 'goles' 
   | 'asistencias' 
   | 'tirosTotal'
@@ -101,6 +104,19 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
       return s.nombre.toLowerCase().includes(busqueda.toLowerCase()) || String(numReal).includes(busqueda);
     })
     .sort((a, b) => {
+      if (campoOrden === 'numero') {
+        const numA = jugadorPlantelMap.get(a.jugadorId)?.numero ?? a.numero ?? 999;
+        const numB = jugadorPlantelMap.get(b.jugadorId)?.numero ?? b.numero ?? 999;
+        return ordenAsc ? numA - numB : numB - numA;
+      }
+      if (campoOrden === 'nombre') {
+        return ordenAsc ? a.nombre.localeCompare(b.nombre) : b.nombre.localeCompare(a.nombre);
+      }
+      if (campoOrden === 'posicion') {
+        const posA = a.posicion || '';
+        const posB = b.posicion || '';
+        return ordenAsc ? posA.localeCompare(posB) : posB.localeCompare(posA);
+      }
       const valA = a[campoOrden];
       const valB = b[campoOrden];
       if (valA === valB) {
@@ -115,7 +131,8 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
       setOrdenAsc(!ordenAsc);
     } else {
       setCampoOrden(campo);
-      setOrdenAsc(false);
+      // Por defecto ascendente para número, nombre y posición; descendente para estadísticas
+      setOrdenAsc(campo === 'numero' || campo === 'nombre' || campo === 'posicion');
     }
   };
 
@@ -354,14 +371,103 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
           </div>
         </div>
 
+        {/* Botones de ordenamiento rápido */}
+        <div className="flex items-center gap-1.5 flex-wrap mb-3 pb-2 border-b border-[#243d2c]/50 text-xs">
+          <span className="text-[11px] text-[#9aa89f] font-semibold mr-1">Ordenar por:</span>
+          <button
+            type="button"
+            onClick={() => cambiarOrden('numero')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              campoOrden === 'numero' 
+                ? 'bg-[#3ddc84]/20 border border-[#3ddc84] text-[#3ddc84]' 
+                : 'bg-[#0f1712] border border-[#243d2c] text-[#9aa89f] hover:text-white'
+            }`}
+          >
+            # Número {campoOrden === 'numero' && (ordenAsc ? '↑' : '↓')}
+          </button>
+          <button
+            type="button"
+            onClick={() => cambiarOrden('nombre')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              campoOrden === 'nombre' 
+                ? 'bg-[#3ddc84]/20 border border-[#3ddc84] text-[#3ddc84]' 
+                : 'bg-[#0f1712] border border-[#243d2c] text-[#9aa89f] hover:text-white'
+            }`}
+          >
+            Nombre {campoOrden === 'nombre' && (ordenAsc ? 'A-Z' : 'Z-A')}
+          </button>
+          <button
+            type="button"
+            onClick={() => cambiarOrden('posicion')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              campoOrden === 'posicion' 
+                ? 'bg-[#3ddc84]/20 border border-[#3ddc84] text-[#3ddc84]' 
+                : 'bg-[#0f1712] border border-[#243d2c] text-[#9aa89f] hover:text-white'
+            }`}
+          >
+            Posición {campoOrden === 'posicion' && (ordenAsc ? '↑' : '↓')}
+          </button>
+          <button
+            type="button"
+            onClick={() => cambiarOrden('goles')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              campoOrden === 'goles' 
+                ? 'bg-[#3ddc84]/20 border border-[#3ddc84] text-[#3ddc84]' 
+                : 'bg-[#0f1712] border border-[#243d2c] text-[#9aa89f] hover:text-white'
+            }`}
+          >
+            Goles ⚽ {campoOrden === 'goles' && (ordenAsc ? '↑' : '↓')}
+          </button>
+          <button
+            type="button"
+            onClick={() => cambiarOrden('minutosJugados')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              campoOrden === 'minutosJugados' 
+                ? 'bg-[#3ddc84]/20 border border-[#3ddc84] text-[#3ddc84]' 
+                : 'bg-[#0f1712] border border-[#243d2c] text-[#9aa89f] hover:text-white'
+            }`}
+          >
+            Minutos ⏱️ {campoOrden === 'minutosJugados' && (ordenAsc ? '↑' : '↓')}
+          </button>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-[#243d2c] text-[#9aa89f] uppercase tracking-wider text-[10px]">
                 <th className="sticky left-0 z-20 bg-[#182a1f] border-r border-[#243d2c]/80 py-2 sm:py-2.5 px-2 sm:px-3 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)]">
-                  Dorsal & Nombre
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => cambiarOrden('numero')}
+                      className={`hover:text-white transition-colors cursor-pointer flex items-center gap-0.5 ${campoOrden === 'numero' ? 'text-[#3ddc84] font-bold' : ''}`}
+                      title="Ordenar por Número"
+                    >
+                      <span>#</span>
+                      <ArrowUpDown className="w-2.5 h-2.5" />
+                    </button>
+                    <span>/</span>
+                    <button
+                      type="button"
+                      onClick={() => cambiarOrden('nombre')}
+                      className={`hover:text-white transition-colors cursor-pointer flex items-center gap-0.5 ${campoOrden === 'nombre' ? 'text-[#3ddc84] font-bold' : ''}`}
+                      title="Ordenar por Nombre"
+                    >
+                      <span>Nombre</span>
+                      <ArrowUpDown className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                 </th>
-                <th className="hidden sm:table-cell py-2.5 px-2">Posición</th>
+                <th 
+                  onClick={() => cambiarOrden('posicion')}
+                  className="hidden sm:table-cell py-2.5 px-2 cursor-pointer hover:text-white transition-colors select-none"
+                  title="Ordenar por Posición"
+                >
+                  <div className="flex items-center gap-1">
+                    <span className={campoOrden === 'posicion' ? 'text-[#3ddc84] font-bold' : ''}>Posición</span>
+                    <ArrowUpDown className="w-2.5 h-2.5" />
+                  </div>
+                </th>
                 
                 <th 
                   onClick={() => cambiarOrden('partidosJugados')}

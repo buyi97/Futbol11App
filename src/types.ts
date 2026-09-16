@@ -39,6 +39,7 @@ export interface ClubConfig {
   colorRival: string; // Color hexadecimal por defecto del rival (default: '#e63946')
   subtitulo?: string;
   formacionPredeterminada?: string; // Formación táctica por defecto (ej: '4-3-3', '4-4-2', '4-1-3-2', '4-3-1-2')
+  titularesPredeterminados?: string[]; // IDs de jugadores titulares asignados por defecto
 }
 
 export interface Partido {

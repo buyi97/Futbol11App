@@ -310,8 +310,11 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
               </div>
 
               {/* Nombre del jugador */}
-              <div className="mt-1 px-1.5 py-0.5 rounded bg-black/80 backdrop-blur-sm border border-black/50 text-[10px] sm:text-[11px] font-semibold text-white tracking-tight max-w-[85px] truncate text-center shadow">
-                {j.nombre.split(' ')[0]}
+              <div 
+                className="mt-1 px-1.5 py-0.5 rounded bg-black/85 backdrop-blur-sm border border-black/50 text-[10px] sm:text-[11px] font-semibold text-white tracking-tight max-w-[110px] truncate text-center shadow whitespace-nowrap"
+                title={j.nombre}
+              >
+                {j.nombre}
               </div>
 
               {/* Posición táctica */}
@@ -390,8 +393,8 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
                         </span>
                       )}
 
-                      <span className="text-xs truncate font-medium">
-                        {s.nombre.split(' ')[0]}
+                      <span className="text-xs truncate font-medium" title={s.nombre}>
+                        {s.nombre}
                       </span>
                     </div>
 

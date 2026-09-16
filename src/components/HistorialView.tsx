@@ -481,6 +481,7 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
                   >
                     <option value="local">Local</option>
                     <option value="visitante">Visitante</option>
+                    <option value="neutral">Neutral</option>
                   </select>
                 </div>
               </div>

@@ -585,6 +585,14 @@ export const StorageService = {
     this.saveClubConfig({ formacionPredeterminada: formacion });
   },
 
+  getTitularesPredeterminados(): string[] {
+    return this.getClubConfig().titularesPredeterminados || [];
+  },
+
+  saveTitularesPredeterminados(ids: string[]): void {
+    this.saveClubConfig({ titularesPredeterminados: ids });
+  },
+
   getNombreEquipo(): string {
     return this.getClubConfig().nombre || 'Los Halcones FC';
   },
