@@ -31,7 +31,8 @@ import {
   X, 
   Search,
   Check,
-  ChevronRight
+  ChevronRight,
+  Shirt
 } from 'lucide-react';
 import { 
   Partido, 
@@ -48,7 +49,8 @@ import {
   formatTimeDigital, 
   calcularMinutoDisplay, 
   formatearMinutoIncidencia, 
-  MinutoIncidenciaInfo 
+  MinutoIncidenciaInfo,
+  getPosicionBadge
 } from '../utils/footballCalculations';
 import { TacticaCancha, JugadorEnCancha } from './TacticaCancha';
 import { FORMACIONES_DISPONIBLES } from './NuevoPartidoView';
@@ -125,6 +127,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   // Modal edición de dorsales en vivo
   const [modalDorsalesAbierto, setModalDorsalesAbierto] = useState(false);
   const [tabDorsales, setTabDorsales] = useState<'propio' | 'rival'>('propio');
+  const [busquedaDorsales, setBusquedaDorsales] = useState('');
   const [nuevoRivalNombre, setNuevoRivalNombre] = useState('');
   const [nuevoRivalNumero, setNuevoRivalNumero] = useState<number>(12);
 
@@ -195,6 +198,15 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     StorageService.savePartidoEnVivo(nuevoDraft);
     setNuevoRivalNombre('');
     setNuevoRivalNumero(draft.rivales.length + 2);
+  };
+
+  // Eliminar jugador rival en vivo
+  const handleEliminarRivalEnVivo = (rivalId: string) => {
+    if (!draft) return;
+    const rivalesActualizados = draft.rivales.filter(r => r.id !== rivalId && String(r.numero) !== rivalId);
+    const nuevoDraft = { ...draft, rivales: rivalesActualizados };
+    setDraft(nuevoDraft);
+    StorageService.savePartidoEnVivo(nuevoDraft);
   };
 
   useEffect(() => {
@@ -709,7 +721,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
             className="py-3 px-3 bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84]/60 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0 transition-all"
             title="Editar dorsales y nombres de jugadores"
           >
-            <Shield className="w-4 h-4 text-[#3ddc84]" />
+            <Shirt className="w-4 h-4 text-[#3ddc84]" />
             <span className="hidden sm:inline">Dorsales</span>
           </button>
 
@@ -1576,6 +1588,288 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                 className="px-4 py-2 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold rounded-xl text-sm font-display cursor-pointer"
               >
                 APLICAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2.5: EDICIÓN DE DORSALES Y NOMBRES EN VIVO                          */}
+      {/* ========================================================================= */}
+      {modalDorsalesAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl w-full max-w-xl p-5 sm:p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
+            {/* Botón cerrar */}
+            <button
+              onClick={() => setModalDorsalesAbierto(false)}
+              className="absolute top-4 right-4 text-[#9aa89f] hover:text-white p-1 rounded-lg"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Encabezado */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2">
+                <Shirt className="w-5 h-5 text-[#3ddc84]" />
+                <h3 className="font-display font-bold text-lg sm:text-xl text-white uppercase tracking-wider">
+                  Edición de Dorsales en Vivo
+                </h3>
+              </div>
+              <p className="text-xs text-[#9aa89f] mt-1">
+                Editá las camisetas y nombres durante el juego. Los cambios se actualizan automáticamente en el marcador, planilla y cancha táctica.
+              </p>
+            </div>
+
+            {/* Pestañas: Nuestro Plantel vs Rival */}
+            <div className="flex items-center gap-2 mb-3 p-1 bg-[#0f1712] rounded-xl border border-[#243d2c]">
+              <button
+                type="button"
+                onClick={() => setTabDorsales('propio')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  tabDorsales === 'propio'
+                    ? 'bg-[#3ddc84] text-[#0f1712] shadow-md'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span className="truncate">{nombreClub}</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20 font-mono">
+                  {draft.convocados.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTabDorsales('rival')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  tabDorsales === 'rival'
+                    ? 'bg-[#ffb703] text-[#0f1712] shadow-md'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span className="truncate">Rival: {draft.partido.rival}</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20 font-mono">
+                  {draft.rivales.length}
+                </span>
+              </button>
+            </div>
+
+            {/* Buscador de jugadores */}
+            <div className="relative mb-3">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder={tabDorsales === 'propio' ? "Buscar convocado por nombre o dorsal..." : "Buscar rival por nombre o dorsal..."}
+                value={busquedaDorsales}
+                onChange={(e) => setBusquedaDorsales(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-[#0f1712] border border-[#243d2c] rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#3ddc84]"
+              />
+              {busquedaDorsales && (
+                <button
+                  type="button"
+                  onClick={() => setBusquedaDorsales('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Contenido según pestaña */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 max-h-[380px]">
+              {tabDorsales === 'propio' ? (
+                /* LISTA DE CONVOCADOS PROPIOS */
+                (() => {
+                  const convocadosFiltrados = draft.convocados.filter(c => {
+                    const jug = jugadoresMap.get(c.jugador_id);
+                    const q = busquedaDorsales.toLowerCase().trim();
+                    if (!q) return true;
+                    return (
+                      (jug?.nombre && jug.nombre.toLowerCase().includes(q)) ||
+                      String(c.numero || jug?.numero || '').includes(q)
+                    );
+                  });
+
+                  if (convocadosFiltrados.length === 0) {
+                    return (
+                      <div className="text-center py-8 text-zinc-500 text-xs">
+                        No se encontraron jugadores que coincidan con la búsqueda.
+                      </div>
+                    );
+                  }
+
+                  return convocadosFiltrados.map((c) => {
+                    const jug = jugadoresMap.get(c.jugador_id);
+                    const badge = getPosicionBadge(jug?.posicion || 'Mediocampista');
+                    const estaEnCancha = jugadoresEnCanchaIds.has(c.jugador_id);
+                    const dorsalActual = c.numero !== undefined && c.numero !== null ? c.numero : (jug?.numero || '');
+
+                    return (
+                      <div
+                        key={c.jugador_id}
+                        className="p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84]/40 flex items-center justify-between gap-3 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          {/* Input de Dorsal */}
+                          <div className="flex items-center gap-1 bg-[#182a1f] px-2 py-1 rounded-lg border border-[#243d2c] shrink-0" title="Editar dorsal">
+                            <span className="text-[10px] text-zinc-400 font-bold">#</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="99"
+                              value={dorsalActual}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (!isNaN(val)) {
+                                  handleActualizarDorsalPropio(c.jugador_id, val);
+                                }
+                              }}
+                              className="w-9 bg-transparent text-center font-bold text-sm text-[#3ddc84] focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs font-semibold text-white truncate block">
+                              {jug?.nombre || 'Jugador'}
+                            </span>
+                            <span className={`text-[9px] font-medium px-1.5 py-0.2 rounded border ${badge.bg}`}>
+                              {badge.label}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Estado */}
+                        <div className="shrink-0 text-right">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                            estaEnCancha
+                              ? 'bg-[#3ddc84]/15 border-[#3ddc84]/40 text-[#3ddc84]'
+                              : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                          }`}>
+                            {estaEnCancha ? 'En Cancha' : 'En Banco'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()
+              ) : (
+                /* LISTA DE JUGADORES RIVALES + AGREGAR RIVAL */
+                <div className="space-y-3">
+                  {/* Formulario rápido para agregar rival */}
+                  <div className="p-3 bg-[#0f1712] border border-[#243d2c] rounded-xl">
+                    <span className="text-[11px] font-bold text-[#ffb703] uppercase tracking-wider block mb-2">
+                      + Agregar Jugador Rival
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 bg-[#182a1f] px-2 py-1.5 rounded-lg border border-[#243d2c] shrink-0">
+                        <span className="text-[10px] text-zinc-400 font-bold">#</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="99"
+                          value={nuevoRivalNumero}
+                          onChange={(e) => setNuevoRivalNumero(parseInt(e.target.value) || 1)}
+                          className="w-8 bg-transparent text-center font-bold text-xs text-[#ffb703] focus:outline-none"
+                          placeholder="Num"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Nombre o apodo (ej: Central, Delantero 9...)"
+                        value={nuevoRivalNombre}
+                        onChange={(e) => setNuevoRivalNombre(e.target.value)}
+                        className="flex-1 px-2.5 py-1.5 bg-[#182a1f] border border-[#243d2c] rounded-lg text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#ffb703]"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAgregarRivalEnVivo}
+                        className="px-3 py-1.5 bg-[#ffb703] hover:bg-[#e0a200] text-[#0f1712] font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Agregar</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lista de rivales */}
+                  {(() => {
+                    const rivalesFiltrados = draft.rivales.filter(r => {
+                      const q = busquedaDorsales.toLowerCase().trim();
+                      if (!q) return true;
+                      return (
+                        (r.nombre && r.nombre.toLowerCase().includes(q)) ||
+                        String(r.numero).includes(q)
+                      );
+                    });
+
+                    if (rivalesFiltrados.length === 0) {
+                      return (
+                        <div className="text-center py-6 text-zinc-500 text-xs">
+                          No hay jugadores rivales registrados con ese criterio.
+                        </div>
+                      );
+                    }
+
+                    return rivalesFiltrados.map((r) => (
+                      <div
+                        key={r.id}
+                        className="p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#ffb703]/40 flex items-center justify-between gap-2.5 transition-colors"
+                      >
+                        {/* Dorsal editable */}
+                        <div className="flex items-center gap-1 bg-[#182a1f] px-2 py-1 rounded-lg border border-[#243d2c] shrink-0" title="Editar dorsal rival">
+                          <span className="text-[10px] text-zinc-400 font-bold">#</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            value={r.numero}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              if (!isNaN(val)) {
+                                handleActualizarRival(r.id, val, r.nombre);
+                              }
+                            }}
+                            className="w-9 bg-transparent text-center font-bold text-sm text-[#ffb703] focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Nombre editable */}
+                        <input
+                          type="text"
+                          value={r.nombre || ''}
+                          placeholder={`Rival #${r.numero}`}
+                          onChange={(e) => {
+                            handleActualizarRival(r.id, r.numero, e.target.value);
+                          }}
+                          className="flex-1 px-2.5 py-1.5 bg-[#182a1f] border border-[#243d2c] rounded-lg text-xs text-white focus:outline-none focus:border-[#ffb703]"
+                        />
+
+                        {/* Quitar rival */}
+                        <button
+                          type="button"
+                          onClick={() => handleEliminarRivalEnVivo(r.id)}
+                          className="p-1.5 text-zinc-500 hover:text-[#e63946] hover:bg-[#e63946]/10 rounded-lg transition-colors cursor-pointer"
+                          title="Eliminar este rival"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Pie del modal */}
+            <div className="flex items-center justify-end pt-3 mt-3 border-t border-[#243d2c]">
+              <button
+                type="button"
+                onClick={() => setModalDorsalesAbierto(false)}
+                className="px-5 py-2 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer"
+              >
+                Listo / Guardado
               </button>
             </div>
           </div>
