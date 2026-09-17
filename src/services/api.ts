@@ -1029,7 +1029,9 @@ function normalizarPartido(p: any): Partido {
     creado_por: String(p.creado_por || 'Director Técnico'),
     etiqueta: p.etiqueta ? String(p.etiqueta) : undefined,
     torneo_id: p.torneo_id ? String(p.torneo_id) : undefined,
-    torneo_nombre: p.torneo_nombre ? String(p.torneo_nombre) : undefined
+    torneo_nombre: p.torneo_nombre ? String(p.torneo_nombre) : undefined,
+    formacion_propia: p.formacion_propia || p.formacion || undefined,
+    formacion_rival: p.formacion_rival || undefined
   };
 }
 
@@ -1039,8 +1041,10 @@ function normalizarConvocado(c: any): Convocado {
     partido_id: String(c.partido_id || ''),
     jugador_id: String(c.jugador_id || ''),
     titular: c.titular === true || c.titular === 'TRUE' || c.titular === 'true' || c.titular === 1,
-    posicion_x: c.posicion_x !== undefined ? Number(c.posicion_x) : undefined,
-    posicion_y: c.posicion_y !== undefined ? Number(c.posicion_y) : undefined,
+    posicion_x: c.posicion_x !== undefined ? Number(c.posicion_x) : (c.tactica_x !== undefined ? Number(c.tactica_x) : undefined),
+    posicion_y: c.posicion_y !== undefined ? Number(c.posicion_y) : (c.tactica_y !== undefined ? Number(c.tactica_y) : undefined),
+    tactica_x: c.tactica_x !== undefined ? Number(c.tactica_x) : (c.posicion_x !== undefined ? Number(c.posicion_x) : undefined),
+    tactica_y: c.tactica_y !== undefined ? Number(c.tactica_y) : (c.posicion_y !== undefined ? Number(c.posicion_y) : undefined),
     posicion_tactica: c.posicion_tactica ? String(c.posicion_tactica) : undefined,
     numero: c.numero !== undefined ? Number(c.numero) : undefined,
     posicion: c.posicion ? String(c.posicion) : undefined

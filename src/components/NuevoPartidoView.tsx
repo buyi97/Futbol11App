@@ -162,7 +162,11 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   const [nuevoSuplenteRivalNom, setNuevoSuplenteRivalNom] = useState<string>('');
 
   const [errorValidacion, setErrorValidacion] = useState<string | null>(null);
+  const [mensajeExitoTactica, setMensajeExitoTactica] = useState<string | null>(null);
   const [iniciando, setIniciando] = useState(false);
+
+  // Ordenamiento de jugadores en la lista de convocatoria
+  const [ordenConvocatoria, setOrdenConvocatoria] = useState<'numero' | 'nombre' | 'posicion'>('numero');
 
   // --- CONTROL DE CONVOCATORIA (Paso 2) ---
   const handleToggleConvocado = (jugadorId: string) => {
@@ -182,7 +186,19 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   };
 
   const handleConvocarSoloBase = () => {
-    const base = StorageService.getTitularesPredeterminados();
+    let base = StorageService.getTitularesPredeterminados();
+    if (!base || base.length === 0) {
+      // Fallback a los 11 primeros activos
+      const ordenados = [...jugadoresActivos].sort((a, b) => {
+        const ordenPos: Record<string, number> = { 'Arquero': 1, 'Defensor': 2, 'Mediocampista': 3, 'Delantero': 4 };
+        const pA = ordenPos[a.posicion] || 5;
+        const pB = ordenPos[b.posicion] || 5;
+        if (pA !== pB) return pA - pB;
+        return (dorsalesMap[a.id] || a.numero || 99) - (dorsalesMap[b.id] || b.numero || 99);
+      });
+      base = ordenados.slice(0, 11).map(j => j.id);
+    }
+
     if (base.length > 0) {
       setConvocadosIds(base);
       const slots: (string | null)[] = Array(11).fill(null);
@@ -208,13 +224,28 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   };
 
   const handleCargarBaseEnCancha = () => {
-    const base = StorageService.getTitularesPredeterminados();
-    if (base.length === 0) {
-      setErrorValidacion('Aún no configuraste un 11 base en la sección Plantel.');
-      return;
+    // 1. Cargar el esquema predeterminado configurado en Plantel
+    const formacionBase = StorageService.getFormacionPredeterminada() || '4-3-3';
+    setFormacionPropia(formacionBase);
+
+    // 2. Cargar los 11 titulares base
+    let base = StorageService.getTitularesPredeterminados();
+    if (!base || base.length === 0) {
+      // Si el usuario aún no configuró una base fija en Plantel, tomar los primeros 11 activos ordenados futbolísticamente
+      const ordenados = [...jugadoresActivos].sort((a, b) => {
+        const ordenPos: Record<string, number> = { 'Arquero': 1, 'Defensor': 2, 'Mediocampista': 3, 'Delantero': 4 };
+        const pA = ordenPos[a.posicion] || 5;
+        const pB = ordenPos[b.posicion] || 5;
+        if (pA !== pB) return pA - pB;
+        return (dorsalesMap[a.id] || a.numero || 99) - (dorsalesMap[b.id] || b.numero || 99);
+      });
+      base = ordenados.slice(0, 11).map(j => j.id);
     }
-    // Asegurar que estén en la lista de convocados
+
+    // 3. Asegurar que estén en la lista de convocados
     setConvocadosIds(prev => Array.from(new Set([...prev, ...base])));
+    
+    // 4. Asignar ordenadamente a los 11 puestos en cancha
     const slots: (string | null)[] = Array(11).fill(null);
     base.slice(0, 11).forEach((id, idx) => {
       if (jugadoresActivos.some(j => j.id === id)) {
@@ -222,6 +253,9 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
       }
     });
     setCanchaSlots(slots);
+    setJugadorSeleccionadoId(null);
+    setMensajeExitoTactica(`✓ 11 Base cargado en cancha con esquema ${formacionBase}`);
+    setTimeout(() => setMensajeExitoTactica(null), 4000);
   };
 
   const handleLlenarPrimeros11 = () => {
@@ -393,6 +427,8 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
       resultado_rival: 0,
       agregado_1T: 0,
       agregado_2T: 0,
+      formacion_propia: formacionPropia,
+      formacion_rival: formacionRival,
       created_at: Date.now(),
       torneo_id: torneoElegido ? torneoElegido.id : undefined,
       torneo_nombre: torneoElegido ? torneoElegido.nombre : undefined,
@@ -414,6 +450,9 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
         posicion: coords.pos,
         posicion_x: coords.x,
         posicion_y: coords.y,
+        posicion_tactica: coords.pos,
+        tactica_x: coords.x,
+        tactica_y: coords.y,
         numero: dorsalesMap[jugadorId] || idx + 1
       });
     });
@@ -443,7 +482,10 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
         titular: true,
         posicion: coords.pos,
         posicion_x: coords.x,
-        posicion_y: coords.y
+        posicion_y: coords.y,
+        posicion_tactica: coords.pos,
+        tactica_x: coords.x,
+        tactica_y: coords.y
       });
     });
 
@@ -509,10 +551,12 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     titular: false
   }));
 
-  // Lista filtrada de convocados para el lateral en Paso 3
+  // Lista filtrada de convocados para el lateral en Paso 3:
+  // Se excluyen los jugadores que YA están ubicados en la cancha táctica para simplificar la selección
   const convocadosFiltradosTactica = convocadosIds
     .map(id => jugadoresMap.get(id))
     .filter((j): j is Jugador => !!j)
+    .filter(j => !canchaSlots.includes(j.id))
     .filter(j => {
       if (!filtroConvocadosTactica.trim()) return true;
       const q = filtroConvocadosTactica.toLowerCase();
@@ -522,6 +566,25 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
 
   const titularesAsignadosCount = canchaSlots.filter(Boolean).length;
   const suplentesCount = Math.max(0, convocadosIds.length - titularesAsignadosCount);
+
+  // Jugadores activos ordenados según el criterio seleccionado en Paso 2
+  const jugadoresActivosOrdenados = [...jugadoresActivos].sort((a, b) => {
+    if (ordenConvocatoria === 'numero') {
+      const numA = dorsalesMap[a.id] !== undefined ? dorsalesMap[a.id] : (a.numero || 999);
+      const numB = dorsalesMap[b.id] !== undefined ? dorsalesMap[b.id] : (b.numero || 999);
+      return numA - numB;
+    }
+    if (ordenConvocatoria === 'posicion') {
+      const ordenPos: Record<string, number> = { 'Arquero': 1, 'Defensor': 2, 'Mediocampista': 3, 'Delantero': 4 };
+      const pA = ordenPos[a.posicion] || 5;
+      const pB = ordenPos[b.posicion] || 5;
+      if (pA !== pB) return pA - pB;
+      const numA = dorsalesMap[a.id] !== undefined ? dorsalesMap[a.id] : (a.numero || 999);
+      const numB = dorsalesMap[b.id] !== undefined ? dorsalesMap[b.id] : (b.numero || 999);
+      return numA - numB;
+    }
+    return a.nombre.localeCompare(b.nombre);
+  });
 
   return (
     <form onSubmit={handleComenzarPartido} className="space-y-6 pb-16">
@@ -766,16 +829,14 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
             >
               Convocar Todos
             </button>
-            {StorageService.getTitularesPredeterminados().length > 0 && (
-              <button
-                type="button"
-                onClick={handleConvocarSoloBase}
-                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-[#9aa89f] hover:text-white transition-all cursor-pointer"
-                title="Cargar solo los 11 titulares configurados en Plantel"
-              >
-                Solo 11 Base
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleConvocarSoloBase}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-[#9aa89f] hover:text-white transition-all cursor-pointer"
+              title="Cargar los 11 titulares base"
+            >
+              Solo 11 Base
+            </button>
             <button
               type="button"
               onClick={handleLimpiarConvocatoria}
@@ -786,9 +847,51 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
           </div>
         </div>
 
+        {/* Barra de Ordenamiento del Plantel Convocado */}
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#243d2c]/60 flex-wrap">
+          <span className="text-xs font-medium text-zinc-400">
+            Ordenar lista por:
+          </span>
+          <div className="flex items-center gap-1 bg-[#0f1712] p-1 rounded-xl border border-[#243d2c]">
+            <button
+              type="button"
+              onClick={() => setOrdenConvocatoria('numero')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                ordenConvocatoria === 'numero'
+                  ? 'bg-[#3ddc84] text-[#0f1712] shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <span>#</span> Por Número
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrdenConvocatoria('posicion')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                ordenConvocatoria === 'posicion'
+                  ? 'bg-[#3ddc84] text-[#0f1712] shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <span>⚽</span> Por Posición
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrdenConvocatoria('nombre')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                ordenConvocatoria === 'nombre'
+                  ? 'bg-[#3ddc84] text-[#0f1712] shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <span>🔤</span> Por Nombre
+            </button>
+          </div>
+        </div>
+
         {/* Grilla de Selección de Convocatoria */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[320px] overflow-y-auto p-1">
-          {jugadoresActivos.map((j) => {
+          {jugadoresActivosOrdenados.map((j) => {
             const esConvocado = convocadosIds.includes(j.id);
             const badge = getPosicionBadge(j.posicion);
             const enSlot = canchaSlots.includes(j.id);
@@ -898,6 +1001,20 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
           </div>
         </div>
 
+        {/* Notificación de carga exitosa de 11 Base */}
+        {mensajeExitoTactica && (
+          <div className="p-2.5 rounded-xl bg-[#3ddc84]/15 border border-[#3ddc84]/40 text-[#3ddc84] text-xs font-semibold flex items-center justify-between animate-fadeIn">
+            <span>{mensajeExitoTactica}</span>
+            <button
+              type="button"
+              onClick={() => setMensajeExitoTactica(null)}
+              className="text-[#3ddc84] hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Selector de Esquema Táctico */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           <span className="text-xs font-semibold text-zinc-400 whitespace-nowrap">
@@ -922,12 +1039,12 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
         {/* Contenedor en 2 Columnas: Convocados a la izquierda y Cancha Táctica a la derecha */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-2">
           
-          {/* Columna Izquierda: Lista de Convocados (Nombres Completos + Dorsal Editable + Estado) */}
+          {/* Columna Izquierda: Lista de Convocados Disponibles (se quitan los que ya están en la cancha) */}
           <div className="lg:col-span-4 flex flex-col bg-[#0f1712] border border-[#243d2c] rounded-2xl p-3.5 space-y-3 max-h-[580px]">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                 <UserCheck className="w-3.5 h-3.5 text-[#3ddc84]" />
-                Convocados ({convocadosIds.length})
+                Disponibles ({convocadosFiltradosTactica.length})
               </span>
               <span className="text-[11px] text-[#9aa89f]">
                 {jugadorSeleccionadoId ? '👉 Tocá un puesto' : 'Arrastrá o tocá'}
@@ -1008,50 +1125,37 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
 
                       {/* Estado y Acción */}
                       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                        {estaEnCancha ? (
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#3ddc84]/20 text-[#3ddc84] border border-[#3ddc84]/30">
-                              {posCancha}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleQuitarJugadorDeCancha(j.id)}
-                              className="p-1 rounded text-zinc-400 hover:text-[#e63946] hover:bg-zinc-800 transition-colors"
-                              title="Quitar de la cancha (pasa a suplente)"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
-                              Suplente
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                // Buscar primer slot vacío
-                                const primerVacio = canchaSlots.indexOf(null);
-                                if (primerVacio !== -1) {
-                                  handleAsignarJugadorASlot(primerVacio, j.id);
-                                } else {
-                                  setErrorValidacion('La cancha ya tiene los 11 titulares asignados.');
-                                }
-                              }}
-                              className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#3ddc84]/15 hover:bg-[#3ddc84] text-[#3ddc84] hover:text-[#0f1712] transition-colors"
-                              title="Ubicar en el primer puesto vacío"
-                            >
-                              + Cancha
-                            </button>
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Buscar primer slot vacío
+                            const primerVacio = canchaSlots.indexOf(null);
+                            if (primerVacio !== -1) {
+                              handleAsignarJugadorASlot(primerVacio, j.id);
+                            } else {
+                              setErrorValidacion('La cancha ya tiene los 11 titulares asignados.');
+                            }
+                          }}
+                          className="text-[10px] font-bold px-2 py-1 rounded bg-[#3ddc84]/15 hover:bg-[#3ddc84] text-[#3ddc84] hover:text-[#0f1712] transition-colors flex items-center gap-0.5 cursor-pointer"
+                          title="Ubicar en el primer puesto libre"
+                        >
+                          + Cancha
+                        </button>
                       </div>
                     </div>
                   );
                 })
               ) : (
-                <div className="text-center py-8 text-zinc-500 text-xs">
-                  No hay convocados para mostrar
+                <div className="text-center py-8 text-zinc-400 text-xs px-2">
+                  {titularesAsignadosCount === 11 ? (
+                    <div className="space-y-1.5">
+                      <span className="text-xl block">⚽</span>
+                      <p className="font-semibold text-[#3ddc84]">11 Titulares asignados en cancha</p>
+                      <p className="text-[11px] text-zinc-500 leading-relaxed">Para liberar un puesto o mover un jugador, tocalo o arrastralo directamente en la cancha.</p>
+                    </div>
+                  ) : (
+                    <p>No hay jugadores disponibles para ubicar</p>
+                  )}
                 </div>
               )}
             </div>
@@ -1150,7 +1254,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                               e.stopPropagation();
                               handleQuitarDeSlot(slotIdx);
                             }}
-                            className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#e63946] text-white flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#e63946] text-white flex items-center justify-center text-xs font-bold opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-md cursor-pointer hover:scale-110"
                             title="Quitar de este puesto"
                           >
                             ×

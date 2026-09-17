@@ -102,6 +102,9 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   // Vista táctica en modal
   const [vistaCancha, setVistaCancha] = useState(true);
 
+  // Bandera para evitar que los efectos o temporizadores re-guarden el borrador tras finalizar
+  const finalizadoRef = useRef(false);
+
   // Para sustituciones (2 pasos)
   const [pasoSustitucion, setPasoSustitucion] = useState<1 | 2>(1);
   const [jugadorSaleId, setJugadorSaleId] = useState<string | null>(null);
@@ -213,9 +216,9 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     };
   }, [corriendo]);
 
-  // Persistir estado cada vez que cambia
+  // Persistir estado cada vez que cambia (evitar si el partido ya fue finalizado)
   useEffect(() => {
-    if (!draft) return;
+    if (!draft || finalizadoRef.current) return;
     const nuevoDraft: PartidoEnVivoDraft = {
       ...draft,
       partido: {
@@ -415,11 +418,22 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
   // Finalizar Partido
   const handleConfirmarFinalizar = async () => {
+    finalizadoRef.current = true;
+    setCorriendo(false);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
     setFinalizando(true);
-    await ApiService.finalizarPartido(draft.partido.id, agregado1T, agregado2T);
+    const partidoIdFinalizado = draft.partido.id;
+    await ApiService.finalizarPartido(partidoIdFinalizado, agregado1T, agregado2T);
+    StorageService.clearPartidoEnVivo();
+    setDraft(null);
     setFinalizando(false);
     setModalFinalizarAbierto(false);
-    onPartidoFinalizado(draft.partido.id);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('futbol11-datos-actualizados'));
+    }
+    onPartidoFinalizado(partidoIdFinalizado);
   };
 
   // Tarjetas acumuladas y expulsiones
@@ -471,24 +485,58 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
       .filter(id => !jugadoresEnCanchaIds.has(id) && !expulsadosPropiosIds.has(id))
   );
 
+  // Manejar cambio de esquema táctico en vivo
+  const handleCambiarEsquemaEnVivo = (nuevoEsquema: string) => {
+    if (!draft || finalizadoRef.current) return;
+    const nuevoDraft: PartidoEnVivoDraft = {
+      ...draft,
+      partido: {
+        ...draft.partido,
+        formacion_propia: nuevoEsquema
+      }
+    };
+    setDraft(nuevoDraft);
+    StorageService.savePartidoEnVivo(nuevoDraft);
+    StorageService.savePartido(nuevoDraft.partido);
+  };
+
   // Preparar disposición táctica para el modal (Equipo Propio)
-  const presetP = draft.partido.formacion_propia && FORMACIONES_DISPONIBLES[draft.partido.formacion_propia] 
-    ? FORMACIONES_DISPONIBLES[draft.partido.formacion_propia] 
-    : FORMACIONES_DISPONIBLES['4-3-3'];
+  const formacionPropiaActual = draft.partido.formacion_propia || StorageService.getFormacionPredeterminada() || '4-3-3';
+  const presetP = FORMACIONES_DISPONIBLES[formacionPropiaActual] || FORMACIONES_DISPONIBLES['4-3-3'];
+
+  // Mapear sustituciones para que el ingresante herede el slot táctico del saliente
+  const sustitutosMap = new Map<string, string>(); // entraId -> saleId
+  incidencias.forEach(inc => {
+    if (inc.tipo === 'cambio' && inc.equipo === 'propio' && inc.jugador_id && inc.jugador_id_secundario) {
+      sustitutosMap.set(inc.jugador_id_secundario, inc.jugador_id);
+    }
+  });
+
+  const titularesOriginales = draft.convocados.filter(c => c.titular);
 
   const convocadosEnCancha = draft.convocados.filter(c => jugadoresEnCanchaIds.has(c.jugador_id) && !expulsadosPropiosIds.has(c.jugador_id));
   const convocadosEnBanco = draft.convocados.filter(c => jugadoresEnBancoIds.has(c.jugador_id) && !expulsadosPropiosIds.has(c.jugador_id));
 
   const jugadoresCanchaPropia: JugadorEnCancha[] = convocadosEnCancha.map((c, idx) => {
     const jug = jugadoresMap.get(c.jugador_id);
-    const coords = c.tactica_x !== undefined && c.tactica_y !== undefined 
-      ? { x: c.tactica_x, y: c.tactica_y } 
-      : (presetP[idx] || { x: 50, y: 50 });
+
+    // Encontrar slot táctico (0 a 10) en base a la formación activa
+    let slotIdx = titularesOriginales.findIndex(t => t.jugador_id === c.jugador_id);
+    if (slotIdx === -1 && sustitutosMap.has(c.jugador_id)) {
+      const saleId = sustitutosMap.get(c.jugador_id);
+      slotIdx = titularesOriginales.findIndex(t => t.jugador_id === saleId);
+    }
+    if (slotIdx === -1 || slotIdx >= presetP.length) {
+      slotIdx = idx % presetP.length;
+    }
+
+    const coords = presetP[slotIdx] || { pos: 'MC', x: 50, y: 50 };
+
     return {
       id: c.jugador_id,
       nombre: jug?.nombre || 'Jugador',
       numero: c.numero || jug?.numero || idx + 1,
-      posicion: c.posicion_tactica || jug?.posicion || 'MC',
+      posicion: coords.pos || c.posicion_tactica || jug?.posicion || 'MC',
       x: coords.x,
       y: coords.y,
       titular: true
@@ -509,23 +557,20 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   });
 
   // Preparar disposición táctica para el modal (Equipo Rival)
-  const presetR = draft.partido.formacion_rival && FORMACIONES_DISPONIBLES[draft.partido.formacion_rival] 
-    ? FORMACIONES_DISPONIBLES[draft.partido.formacion_rival] 
-    : FORMACIONES_DISPONIBLES['4-3-3'];
+  const formacionRivalActual = draft.partido.formacion_rival || '4-4-2';
+  const presetR = FORMACIONES_DISPONIBLES[formacionRivalActual] || FORMACIONES_DISPONIBLES['4-4-2'];
 
   const rivalesActivos = draft.rivales.filter(r => 
     !expulsadosRivalesIds.has(String(r.numero)) && !expulsadosRivalesIds.has(r.id)
   );
 
   const jugadoresCanchaRival: JugadorEnCancha[] = rivalesActivos.map((r, idx) => {
-    const coords = r.tactica_x !== undefined && r.tactica_y !== undefined 
-      ? { x: r.tactica_x, y: r.tactica_y } 
-      : (presetR[idx] || { x: 50, y: 50 });
+    const coords = presetR[idx % presetR.length] || { pos: 'RIV', x: 50, y: 50 };
     return {
       id: String(r.numero),
       nombre: r.nombre ? r.nombre : `Rival #${r.numero}`,
       numero: r.numero,
-      posicion: r.posicion_tactica || 'RIV',
+      posicion: coords.pos || r.posicion_tactica || 'RIV',
       x: coords.x,
       y: coords.y,
       esRival: true
@@ -1113,7 +1158,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                   : 'Tocá el jugador en la cancha o en la lista:'}
               </span>
 
-              {tipoSeleccionado !== 'doble_amarilla' ? (
+              {/* Selector Vista Cancha / Vista Lista */}
+              {tipoSeleccionado !== 'doble_amarilla' && !(tipoSeleccionado === 'cambio' && pasoSustitucion === 2) ? (
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
@@ -1135,8 +1181,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                   </button>
                 </div>
               ) : (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Modo Lista Exclusivo
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#3ddc84]/20 text-[#3ddc84] border border-[#3ddc84]/30">
+                  {tipoSeleccionado === 'cambio' ? '📋 Selección de Suplente: Formato Lista' : 'Modo Lista Exclusivo'}
                 </span>
               )}
             </div>
@@ -1154,27 +1200,50 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
             {/* Contenido: Cancha o Lista */}
             <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[380px] pr-1">
-              {vistaCancha && tipoSeleccionado !== 'doble_amarilla' ? (
+              {vistaCancha && tipoSeleccionado !== 'doble_amarilla' && !(tipoSeleccionado === 'cambio' && pasoSustitucion === 2) ? (
                 // ================= VISTA FORMACIÓN =================
                 <div className="py-1">
                   {equipoIncidencia === 'propio' ? (
-                    <TacticaCancha
-                      jugadores={
-                        tipoSeleccionado === 'cambio' && pasoSustitucion === 2
-                          ? suplentesCanchaPropia
-                          : pasoAsistencia
-                          ? jugadoresCanchaPropia.filter(j => j.id !== goleadorId)
-                          : jugadoresCanchaPropia
-                      }
-                      suplentes={
-                        tipoSeleccionado === 'cambio' && pasoSustitucion === 2 
-                          ? [] 
-                          : suplentesCanchaPropia
-                      }
-                      mostrarSuplentes={tipoSeleccionado !== 'cambio' || pasoSustitucion === 2}
-                      colorEquipo="verde"
-                      modoInteractivo={true}
-                      editableDorsales={true}
+                    <>
+                      {/* Indicador de Táctica y Selector en Vivo */}
+                      <div className="flex items-center justify-between bg-[#132319] border border-[#243d2c] rounded-xl px-2.5 py-1.5 mb-2 gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-semibold text-zinc-300">Táctica:</span>
+                          <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-[#3ddc84]/20 border border-[#3ddc84]/40 text-[#3ddc84]">
+                            {formacionPropiaActual}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {Object.keys(FORMACIONES_DISPONIBLES).map(esq => (
+                            <button
+                              key={esq}
+                              type="button"
+                              onClick={() => handleCambiarEsquemaEnVivo(esq)}
+                              className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition-all cursor-pointer ${
+                                formacionPropiaActual === esq
+                                  ? 'bg-[#3ddc84] text-[#0f1712] border-[#3ddc84]'
+                                  : 'bg-[#0f1712] text-zinc-400 border-[#243d2c] hover:text-white'
+                              }`}
+                              title={`Cambiar a ${esq}`}
+                            >
+                              {esq}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <TacticaCancha
+                        titulo={`Halcones FC (${formacionPropiaActual})`}
+                        jugadores={
+                          pasoAsistencia
+                            ? jugadoresCanchaPropia.filter(j => j.id !== goleadorId)
+                            : jugadoresCanchaPropia
+                        }
+                        suplentes={suplentesCanchaPropia}
+                        mostrarSuplentes={tipoSeleccionado !== 'cambio'}
+                        colorEquipo="verde"
+                        modoInteractivo={true}
+                        editableDorsales={true}
                       onEditarNumero={(id, num) => handleActualizarDorsalPropio(id, num)}
                       onSeleccionarJugador={(idOrObj, obj) => {
                         const targetId = typeof idOrObj === 'object' && idOrObj !== null 
@@ -1190,6 +1259,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                           if (pasoSustitucion === 1) {
                             setJugadorSaleId(targetId);
                             setPasoSustitucion(2);
+                            setVistaCancha(false);
+                            setFiltroBuscador('');
                           } else {
                             confirmarGuardadoIncidencia(jugadorSaleId!, targetId);
                           }
@@ -1211,6 +1282,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                           if (pasoSustitucion === 1) {
                             setJugadorSaleId(targetId);
                             setPasoSustitucion(2);
+                            setVistaCancha(false);
+                            setFiltroBuscador('');
                           } else {
                             confirmarGuardadoIncidencia(jugadorSaleId!, targetId);
                           }
@@ -1219,8 +1292,10 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                         }
                       }}
                     />
+                  </>
                   ) : (
                     <TacticaCancha
+                      titulo={`Rival: ${draft.partido.rival} (${formacionRivalActual})`}
                       jugadores={jugadoresCanchaRival}
                       colorEquipo="amarillo"
                       modoInteractivo={true}

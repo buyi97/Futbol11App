@@ -20,13 +20,15 @@ import {
   Star,
   Check,
   CheckSquare,
-  Square
+  Square,
+  List as ListIcon
 } from 'lucide-react';
 import { Jugador, PosicionJugador, RolUsuario } from '../types';
 import { getPosicionBadge } from '../utils/footballCalculations';
 import { ApiService } from '../services/api';
 import { FORMACIONES_DISPONIBLES } from '../utils/formations';
 import { StorageService } from '../services/storage';
+import { TacticaCancha, JugadorEnCancha } from './TacticaCancha';
 
 interface PlantelViewProps {
   jugadores: Jugador[];
@@ -49,6 +51,8 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
   const [busqueda, setBusqueda] = useState('');
   const [filtroPosicion, setFiltroPosicion] = useState<string>('todas');
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'activos' | 'inactivos'>('activos');
+  const [criterioOrden, setCriterioOrden] = useState<'numero' | 'nombre' | 'posicion'>('numero');
+  const [vistaModo, setVistaModo] = useState<'tarjetas' | 'lista'>('tarjetas');
 
   // Modal de alta/edición
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -141,13 +145,17 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
     }
   };
 
-  const handleGuardarTacticaPredeterminada = () => {
+  const handleGuardarTacticaPredeterminada = async () => {
     setGuardandoTactica(true);
-    StorageService.saveFormacionPredeterminada(formacionPredeterminada);
-    StorageService.saveTitularesPredeterminados(titularesTemp);
+    const updated = StorageService.saveClubConfig({
+      formacionPredeterminada,
+      titularesPredeterminados: titularesTemp
+    });
+    // Sincronizar remotamente con Google Sheets si está conectado
+    await ApiService.guardarClubConfig(updated).catch(() => {});
     setGuardandoTactica(false);
     setModalTacticaAbierto(false);
-    setMensajeExito('Formación táctica y 11 titular predeterminados guardados con éxito');
+    setMensajeExito(`Formación táctica (${formacionPredeterminada}) y 11 titular base guardados con éxito`);
     setTimeout(() => setMensajeExito(null), 3500);
   };
 
@@ -160,9 +168,10 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
 
   const titularesGuardados = StorageService.getTitularesPredeterminados();
 
-  // Filtrado
+  // Filtrado y ordenación
   const jugadoresFiltrados = jugadores.filter(j => {
-    const coincideNombre = j.nombre.toLowerCase().includes(busqueda.toLowerCase());
+    const coincideNombre = j.nombre.toLowerCase().includes(busqueda.toLowerCase()) || 
+      (j.numero !== undefined && String(j.numero).includes(busqueda));
     const coincidePosicion = filtroPosicion === 'todas' || j.posicion === filtroPosicion;
     const coincideEstado = 
       filtroEstado === 'todos' || 
@@ -170,7 +179,25 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
       (filtroEstado === 'inactivos' && !j.activo);
 
     return coincideNombre && coincidePosicion && coincideEstado;
-  }).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }).sort((a, b) => {
+    if (criterioOrden === 'numero') {
+      const numA = (a.numero !== undefined && a.numero !== null) ? a.numero : 999;
+      const numB = (b.numero !== undefined && b.numero !== null) ? b.numero : 999;
+      if (numA !== numB) return numA - numB;
+      return a.nombre.localeCompare(b.nombre);
+    }
+    if (criterioOrden === 'posicion') {
+      const ordenPos: Record<string, number> = { 'Arquero': 1, 'Defensor': 2, 'Mediocampista': 3, 'Delantero': 4 };
+      const pA = ordenPos[a.posicion] || 5;
+      const pB = ordenPos[b.posicion] || 5;
+      if (pA !== pB) return pA - pB;
+      const numA = (a.numero !== undefined && a.numero !== null) ? a.numero : 999;
+      const numB = (b.numero !== undefined && b.numero !== null) ? b.numero : 999;
+      if (numA !== numB) return numA - numB;
+      return a.nombre.localeCompare(b.nombre);
+    }
+    return a.nombre.localeCompare(b.nombre);
+  });
 
   return (
     <div className="space-y-5 pb-12">
@@ -225,11 +252,11 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
         </div>
       )}
 
-      {/* Barra de Filtros y Búsqueda */}
-      <div className="bg-[#182a1f] border border-[#243d2c] rounded-xl p-3 sm:p-4 flex flex-col md:flex-row items-center gap-3">
+      {/* Barra de Filtros, Búsqueda, Orden y Modo de Vista */}
+      <div className="bg-[#182a1f] border border-[#243d2c] rounded-xl p-3 sm:p-4 flex flex-col lg:flex-row items-center justify-between gap-3">
         
         {/* Input de Búsqueda */}
-        <div className="relative w-full md:flex-1">
+        <div className="relative w-full lg:max-w-xs">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#9aa89f]">
             <Search className="w-4 h-4" />
           </div>
@@ -238,18 +265,18 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
             type="text"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por nombre de jugador..."
+            placeholder="Buscar por nombre o #..."
             className="w-full pl-9 pr-3 py-2 bg-[#0f1712] border border-[#243d2c] rounded-lg text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-[#3ddc84]"
           />
         </div>
 
         {/* Filtros de Posición y Estado */}
-        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+        <div className="flex items-center gap-2 w-full lg:w-auto flex-wrap justify-between lg:justify-end">
           <select
             id="select-filtro-posicion"
             value={filtroPosicion}
             onChange={(e) => setFiltroPosicion(e.target.value)}
-            className="px-3 py-2 bg-[#0f1712] border border-[#243d2c] rounded-lg text-xs font-medium text-white focus:outline-none focus:border-[#3ddc84]"
+            className="px-2.5 py-2 bg-[#0f1712] border border-[#243d2c] rounded-lg text-xs font-medium text-white focus:outline-none focus:border-[#3ddc84]"
           >
             <option value="todas">Todas las Posiciones</option>
             <option value="Arquero">Arqueros</option>
@@ -262,20 +289,234 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
             id="select-filtro-estado"
             value={filtroEstado}
             onChange={(e) => setFiltroEstado(e.target.value as any)}
-            className="px-3 py-2 bg-[#0f1712] border border-[#243d2c] rounded-lg text-xs font-medium text-white focus:outline-none focus:border-[#3ddc84]"
+            className="px-2.5 py-2 bg-[#0f1712] border border-[#243d2c] rounded-lg text-xs font-medium text-white focus:outline-none focus:border-[#3ddc84]"
           >
             <option value="activos">Solo Activos</option>
             <option value="inactivos">Solo Inactivos</option>
             <option value="todos">Todos los Estados</option>
           </select>
+
+          {/* Ordenar por: Número / Posición / Nombre */}
+          <div className="flex items-center bg-[#0f1712] border border-[#243d2c] rounded-lg p-0.5">
+            <span className="text-[10px] uppercase font-bold text-zinc-400 px-2 hidden sm:inline">Orden:</span>
+            <button
+              type="button"
+              onClick={() => setCriterioOrden('numero')}
+              className={`px-2 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                criterioOrden === 'numero'
+                  ? 'bg-[#3ddc84] text-[#0f1712]'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Ordenar por Número de dorsal"
+            >
+              # Número
+            </button>
+            <button
+              type="button"
+              onClick={() => setCriterioOrden('posicion')}
+              className={`px-2 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                criterioOrden === 'posicion'
+                  ? 'bg-[#3ddc84] text-[#0f1712]'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Ordenar por Posición en cancha"
+            >
+              Posición
+            </button>
+            <button
+              type="button"
+              onClick={() => setCriterioOrden('nombre')}
+              className={`px-2 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                criterioOrden === 'nombre'
+                  ? 'bg-[#3ddc84] text-[#0f1712]'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Ordenar alfabéticamente por Nombre"
+            >
+              A-Z
+            </button>
+          </div>
+
+          {/* Selector de Modo de Vista: Tarjetas vs Lista */}
+          <div className="flex items-center bg-[#0f1712] border border-[#243d2c] rounded-lg p-0.5 ml-auto sm:ml-0">
+            <button
+              type="button"
+              onClick={() => setVistaModo('tarjetas')}
+              className={`p-1.5 rounded transition-all cursor-pointer ${
+                vistaModo === 'tarjetas'
+                  ? 'bg-[#3ddc84] text-[#0f1712]'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Vista en Tarjetas"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setVistaModo('lista')}
+              className={`p-1.5 rounded transition-all cursor-pointer ${
+                vistaModo === 'lista'
+                  ? 'bg-[#3ddc84] text-[#0f1712]'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Vista en Lista"
+            >
+              <ListIcon className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
       </div>
 
-      {/* Grid de Jugadores */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-        {jugadoresFiltrados.length > 0 ? (
-          jugadoresFiltrados.map((jugador) => {
+      {/* Listado de Jugadores: Modo Lista o Modo Tarjetas */}
+      {jugadoresFiltrados.length === 0 ? (
+        <div className="text-center py-12 bg-[#182a1f] border border-[#243d2c] rounded-2xl p-6">
+          <Users className="w-10 h-10 text-[#9aa89f] mx-auto mb-2 opacity-50" />
+          <p className="text-base text-white font-medium">No se encontraron jugadores</p>
+          <p className="text-xs text-[#9aa89f] mt-1">
+            Probá ajustando el término de búsqueda o los filtros de posición.
+          </p>
+        </div>
+      ) : vistaModo === 'lista' ? (
+        /* Vista en Lista (Tabular responsiva) */
+        <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl overflow-hidden shadow-lg">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-[#243d2c] bg-[#0f1712]/70 text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                  <th className="py-3 px-4 w-16 text-center">#</th>
+                  <th className="py-3 px-4">Jugador</th>
+                  <th className="py-3 px-4">Posición</th>
+                  <th className="py-3 px-4 text-center">11 Base</th>
+                  <th className="py-3 px-4 text-center">Estado</th>
+                  <th className="py-3 px-4 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#243d2c]/60 text-sm">
+                {jugadoresFiltrados.map((jugador) => {
+                  const badge = getPosicionBadge(jugador.posicion);
+                  const esTitularDefault = titularesGuardados.includes(jugador.id);
+                  const estaEditandoDorsal = editandoDorsalId === jugador.id;
+
+                  return (
+                    <tr
+                      key={jugador.id}
+                      className={`hover:bg-[#0f1712]/40 transition-colors ${
+                        !jugador.activo ? 'opacity-60 bg-black/10' : ''
+                      }`}
+                    >
+                      {/* Dorsal */}
+                      <td className="py-3 px-4 text-center">
+                        {estaEditandoDorsal ? (
+                          <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            autoFocus
+                            value={dorsalTemp}
+                            onChange={(e) => setDorsalTemp(e.target.value)}
+                            onBlur={() => handleGuardarDorsalRapido(jugador, dorsalTemp)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleGuardarDorsalRapido(jugador, dorsalTemp);
+                              if (e.key === 'Escape') setEditandoDorsalId(null);
+                            }}
+                            className="w-11 h-7 px-1 bg-[#0f1712] border border-[#3ddc84] rounded text-center text-xs font-bold text-[#3ddc84] focus:outline-none"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!esEditor) return;
+                              setDorsalTemp(jugador.numero !== undefined && jugador.numero !== null ? String(jugador.numero) : '');
+                              setEditandoDorsalId(jugador.id);
+                            }}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center font-display font-bold text-xs mx-auto border transition-colors ${
+                              jugador.numero !== undefined && jugador.numero !== null
+                                ? 'bg-[#3ddc84]/15 border-[#3ddc84]/40 text-[#3ddc84] hover:border-[#3ddc84]'
+                                : 'bg-zinc-800/80 border-zinc-700 text-zinc-400 hover:border-zinc-500'
+                            }`}
+                            title={esEditor ? "Clic para editar dorsal permanente" : undefined}
+                          >
+                            {jugador.numero !== undefined && jugador.numero !== null ? jugador.numero : '-'}
+                          </button>
+                        )}
+                      </td>
+
+                      {/* Nombre */}
+                      <td className="py-3 px-4">
+                        <span className="font-semibold text-white block">
+                          {jugador.nombre}
+                        </span>
+                      </td>
+
+                      {/* Posición */}
+                      <td className="py-3 px-4">
+                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-block ${badge.bg}`}>
+                          {badge.label}
+                        </span>
+                      </td>
+
+                      {/* 11 Base */}
+                      <td className="py-3 px-4 text-center">
+                        {esTitularDefault ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-[#3ddc84] bg-[#3ddc84]/15 border border-[#3ddc84]/30 px-2 py-0.5 rounded-full">
+                            <Star className="w-3 h-3 fill-[#3ddc84]" />
+                            Titular
+                          </span>
+                        ) : (
+                          <span className="text-zinc-600 text-xs">-</span>
+                        )}
+                      </td>
+
+                      {/* Estado */}
+                      <td className="py-3 px-4 text-center">
+                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border inline-block ${
+                          jugador.activo
+                            ? 'bg-[#3ddc84]/15 text-[#3ddc84] border-[#3ddc84]/30'
+                            : 'bg-[#e63946]/15 text-[#e63946] border-[#e63946]/30'
+                        }`}>
+                          {jugador.activo ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+
+                      {/* Acciones */}
+                      <td className="py-3 px-4 text-right">
+                        {esEditor && (
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => abrirModalEditar(jugador)}
+                              className="p-1.5 rounded-lg text-[#9aa89f] hover:text-[#3ddc84] hover:bg-[#0f1712] transition-colors cursor-pointer"
+                              title="Editar Jugador"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleActivo(jugador)}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                jugador.activo
+                                  ? 'text-[#9aa89f] hover:text-[#e63946] hover:bg-[#0f1712]'
+                                  : 'text-[#9aa89f] hover:text-[#3ddc84] hover:bg-[#0f1712]'
+                              }`}
+                              title={jugador.activo ? 'Desactivar (Baja lógica)' : 'Activar de nuevo'}
+                            >
+                              {jugador.activo ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* Vista en Tarjetas */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+          {jugadoresFiltrados.map((jugador) => {
             const badge = getPosicionBadge(jugador.posicion);
             const esTitularDefault = titularesGuardados.includes(jugador.id);
             const estaEditandoDorsal = editandoDorsalId === jugador.id;
@@ -390,17 +631,9 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
                 </div>
               </div>
             );
-          })
-        ) : (
-          <div className="col-span-full text-center py-12 bg-[#182a1f] border border-[#243d2c] rounded-2xl p-6">
-            <Users className="w-10 h-10 text-[#9aa89f] mx-auto mb-2 opacity-50" />
-            <p className="text-base text-white font-medium">No se encontraron jugadores</p>
-            <p className="text-xs text-[#9aa89f] mt-1">
-              Probá ajustando el término de búsqueda o los filtros de posición.
-            </p>
-          </div>
-        )}
-      </div>
+          })}
+        </div>
+      )}
 
       {/* Modal Configurar Táctica y 11 Titular Base */}
       {modalTacticaAbierto && (

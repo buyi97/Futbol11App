@@ -37,88 +37,64 @@ export function calcularMinutoDisplay(
   duracionTiempoMin: number = 40
 ): MinutoIncidenciaInfo {
   const seg = Math.max(0, segundosEnTiempo);
-  // Minuto transcurrido dentro del tiempo actual (0 a 59s -> min 1, 60 a 119s -> min 2, etc.)
+  // Minuto transcurrido relativo al tiempo actual (0 a 59s -> min 1, 60 a 119s -> min 2, etc.)
   const minutoEnTiempo = Math.floor(seg / 60) + 1;
   const segundo = seg % 60;
+  const sufijo = tiempo === 1 ? 'PT' : 'ST';
 
-  if (tiempo === 1) {
-    if (minutoEnTiempo <= duracionTiempoMin) {
-      return {
-        minuto: minutoEnTiempo,
-        segundo,
-        esAgregado: false,
-        minutoBase: minutoEnTiempo,
-        minutoExtra: 0,
-        display: `${minutoEnTiempo}'`
-      };
-    } else {
-      const extra = minutoEnTiempo - duracionTiempoMin;
-      return {
-        minuto: duracionTiempoMin,
-        segundo,
-        esAgregado: true,
-        minutoBase: duracionTiempoMin,
-        minutoExtra: extra,
-        display: `${duracionTiempoMin}' + ${extra}'`
-      };
-    }
+  if (minutoEnTiempo <= duracionTiempoMin) {
+    return {
+      minuto: minutoEnTiempo,
+      segundo,
+      esAgregado: false,
+      minutoBase: minutoEnTiempo,
+      minutoExtra: 0,
+      display: `${minutoEnTiempo}' ${sufijo}`
+    };
   } else {
-    // 2do Tiempo: el tiempo reglamentario va de (duracionTiempoMin + 1) hasta (duracionTiempoMin * 2)
-    const finReglamentario = duracionTiempoMin * 2;
-    const minutoTotal = duracionTiempoMin + minutoEnTiempo;
-
-    if (minutoTotal <= finReglamentario) {
-      return {
-        minuto: minutoTotal,
-        segundo,
-        esAgregado: false,
-        minutoBase: minutoTotal,
-        minutoExtra: 0,
-        display: `${minutoTotal}'`
-      };
-    } else {
-      const extra = minutoTotal - finReglamentario;
-      return {
-        minuto: finReglamentario,
-        segundo,
-        esAgregado: true,
-        minutoBase: finReglamentario,
-        minutoExtra: extra,
-        display: `${finReglamentario}' + ${extra}'`
-      };
-    }
+    const extra = minutoEnTiempo - duracionTiempoMin;
+    return {
+      minuto: duracionTiempoMin,
+      segundo,
+      esAgregado: true,
+      minutoBase: duracionTiempoMin,
+      minutoExtra: extra,
+      display: `${duracionTiempoMin}'+${extra}' ${sufijo}`
+    };
   }
 }
 
 /**
- * Formatea una incidencia para mostrar su minuto de manera futbolera (ej: "40' + 3'")
+ * Formatea una incidencia para mostrar su minuto siempre relativo al tiempo que sucedió (ej: "10' ST" o "40'+3' PT")
  */
 export function formatearMinutoIncidencia(
   incidencia: Incidencia,
   duracionTiempoMin: number = 40
 ): string {
-  if (incidencia.minuto_display) {
+  const sufijo = incidencia.tiempo === 1 ? 'PT' : 'ST';
+
+  // Si ya tiene un formato relativo explícito con PT o ST, usarlo
+  if (incidencia.minuto_display && (incidencia.minuto_display.includes('PT') || incidencia.minuto_display.includes('ST') || incidencia.minuto_display.includes('1T') || incidencia.minuto_display.includes('2T'))) {
     return incidencia.minuto_display;
   }
 
+  // Minuto relativo dentro de la etapa
+  let minRelativo = incidencia.minuto || 1;
+  // Compatibilidad con registros antiguos donde 2T se grabó corrido (ej: 50 en partido de 40)
+  if (incidencia.tiempo === 2 && minRelativo > duracionTiempoMin) {
+    minRelativo = minRelativo - duracionTiempoMin;
+  }
+
   if (incidencia.minuto_agregado && incidencia.minuto_agregado > 0) {
-    const base = incidencia.tiempo === 1 ? duracionTiempoMin : duracionTiempoMin * 2;
-    return `${base}' + ${incidencia.minuto_agregado}'`;
+    return `${duracionTiempoMin}'+${incidencia.minuto_agregado}' ${sufijo}`;
   }
 
-  // Fallback si fue grabado como minuto directo
-  if (incidencia.tiempo === 1 && incidencia.minuto > duracionTiempoMin) {
-    const extra = incidencia.minuto - duracionTiempoMin;
-    return `${duracionTiempoMin}' + ${extra}'`;
+  if (minRelativo > duracionTiempoMin) {
+    const extra = minRelativo - duracionTiempoMin;
+    return `${duracionTiempoMin}'+${extra}' ${sufijo}`;
   }
 
-  const finReglamentario = duracionTiempoMin * 2;
-  if (incidencia.tiempo === 2 && incidencia.minuto > finReglamentario) {
-    const extra = incidencia.minuto - finReglamentario;
-    return `${finReglamentario}' + ${extra}'`;
-  }
-
-  return `${Math.max(1, incidencia.minuto)}'`;
+  return `${Math.max(1, minRelativo)}' ${sufijo}`;
 }
 
 /**
