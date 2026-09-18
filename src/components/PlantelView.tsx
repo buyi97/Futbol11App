@@ -234,7 +234,7 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
     onActualizarJugadores();
   };
 
-  const titularesGuardados = StorageService.getTitularesPredeterminados();
+  const titularesGuardados = esEditor ? StorageService.getTitularesPredeterminados() : [];
 
   // Filtrado y ordenación
   const jugadoresFiltrados = jugadores.filter(j => {
@@ -284,7 +284,9 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-[#9aa89f] mt-0.5">
-            Jugadores registrados para {nombreClub} ({jugadores.filter(j => j.activo).length} activos). Configura dorsales fijos y el 11 titular por defecto.
+            {esEditor
+              ? `Jugadores registrados para ${nombreClub} (${jugadores.filter(j => j.activo).length} activos). Configura dorsales fijos y el 11 titular por defecto.`
+              : `Jugadores registrados para ${nombreClub} (${jugadores.filter(j => j.activo).length} activos).`}
           </p>
         </div>
 
@@ -455,9 +457,9 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
                   <th className="py-3 px-4 w-16 text-center">#</th>
                   <th className="py-3 px-4">Jugador</th>
                   <th className="py-3 px-4">Posición</th>
-                  <th className="py-3 px-4 text-center">11 Base</th>
+                  {esEditor && <th className="py-3 px-4 text-center">11 Base</th>}
                   <th className="py-3 px-4 text-center">Estado</th>
-                  <th className="py-3 px-4 text-right">Acciones</th>
+                  {esEditor && <th className="py-3 px-4 text-right">Acciones</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#243d2c]/60 text-sm">
@@ -524,17 +526,19 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
                         </span>
                       </td>
 
-                      {/* 11 Base */}
-                      <td className="py-3 px-4 text-center">
-                        {esTitularDefault ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-[#3ddc84] bg-[#3ddc84]/15 border border-[#3ddc84]/30 px-2 py-0.5 rounded-full">
-                            <Star className="w-3 h-3 fill-[#3ddc84]" />
-                            Titular
-                          </span>
-                        ) : (
-                          <span className="text-zinc-600 text-xs">-</span>
-                        )}
-                      </td>
+                      {/* 11 Base (Solo visible para Editor/DT) */}
+                      {esEditor && (
+                        <td className="py-3 px-4 text-center">
+                          {esTitularDefault ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-[#3ddc84] bg-[#3ddc84]/15 border border-[#3ddc84]/30 px-2 py-0.5 rounded-full">
+                              <Star className="w-3 h-3 fill-[#3ddc84]" />
+                              Titular
+                            </span>
+                          ) : (
+                            <span className="text-zinc-600 text-xs">-</span>
+                          )}
+                        </td>
+                      )}
 
                       {/* Estado */}
                       <td className="py-3 px-4 text-center">
@@ -547,9 +551,9 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
                         </span>
                       </td>
 
-                      {/* Acciones */}
-                      <td className="py-3 px-4 text-right">
-                        {esEditor && (
+                      {/* Acciones (Solo visible para Editor/DT) */}
+                      {esEditor && (
+                        <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
@@ -572,8 +576,8 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
                               {jugador.activo ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
                             </button>
                           </div>
-                        )}
-                      </td>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -594,7 +598,7 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
                 key={jugador.id}
                 className={`p-4 rounded-xl border transition-all flex flex-col justify-between ${
                   jugador.activo
-                    ? esTitularDefault
+                    ? (esEditor && esTitularDefault)
                       ? 'bg-[#182a1f] border-[#3ddc84]/60 shadow-md ring-1 ring-[#3ddc84]/30'
                       : 'bg-[#182a1f] border-[#243d2c] hover:border-[#3ddc84]/50 shadow-md'
                     : 'bg-[#182a1f]/40 border-[#243d2c]/50 opacity-60'
@@ -645,7 +649,7 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
                         {badge.label}
                       </span>
 
-                      {esTitularDefault && (
+                      {esEditor && esTitularDefault && (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#3ddc84]/20 border border-[#3ddc84]/40 text-[#3ddc84] flex items-center gap-0.5" title="Titular en el 11 base predeterminado">
                           <Star className="w-2.5 h-2.5 fill-[#3ddc84]" />
                           Titular 11
@@ -704,7 +708,7 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
       )}
 
       {/* Modal Configurar Táctica y 11 Titular Base con Cancha Interactiva */}
-      {modalTacticaAbierto && (
+      {esEditor && modalTacticaAbierto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
           <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl w-full max-w-5xl p-4 sm:p-6 shadow-2xl relative max-h-[94vh] flex flex-col">
             <button
