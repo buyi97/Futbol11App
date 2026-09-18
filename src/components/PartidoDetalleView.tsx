@@ -2518,13 +2518,27 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
           const dorsalMostrar = conv?.numero !== undefined && conv?.numero !== null ? conv.numero : item.jugador.numero;
           const estaExcluido = jugadoresExcluidosCosto.has(item.jugador.id);
           const yaPago = jugadoresPagaronCosto.has(item.jugador.id);
-          const minutos = item.minutosJugados || 0;
+          
+          // Minutos para el cálculo de costo:
+          // Si el jugador fue expulsado, computar como si hubiera jugado todo el resto del partido
+          // (ej: titular expulsado a los 10' -> cuenta todo el partido; ingresado a los 10' ST y expulsado a los 20' ST -> cuenta desde los 10' ST hasta el final).
+          let minutos = item.minutosJugados || 0;
+          let ajustadoPorExpulsion = false;
+          if (item.fueExpulsado && (item.titular || item.minutoEntrada !== undefined || (item.minutosJugados || 0) > 0)) {
+            const minExp = item.minutoExpulsion ?? item.minutoSalida ?? 0;
+            const minutosRestantes = Math.max(0, duracionTotalMin - minExp);
+            minutos = (item.minutosJugados || 0) + minutosRestantes;
+            ajustadoPorExpulsion = true;
+          }
+
           return {
             ...item,
             dorsalMostrar,
             estaExcluido,
             yaPago,
             minutos,
+            minutosReales: item.minutosJugados || 0,
+            ajustadoPorExpulsion
           };
         });
 
@@ -2580,12 +2594,12 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
             `⚽ *REPARTO DE COSTOS - ${nombreClub} vs ${partidoEditado.rival}*`,
             `📅 Fecha: ${partidoEditado.fecha}`,
             `💰 *Costo Total:* $${costoTotalNumerico.toLocaleString('es-AR')}`,
-            `📊 *Criterio:* ${modoCalculoCosto === 'proporcional' ? 'Proporcional a minutos jugados (con descuentos por cambios y expulsiones)' : 'Partes iguales entre los que jugaron'}`,
+            `📊 *Criterio:* ${modoCalculoCosto === 'proporcional' ? 'Proporcional a minutos jugados (con expulsados computando hasta el final)' : 'Partes iguales entre los que jugaron'}`,
             '',
             `📋 *DETALLE POR JUGADOR:*`,
             ...jugadoresConCuota
               .filter(j => !j.estaExcluido && j.cuotaFinal > 0)
-              .map(j => `• #${j.dorsalMostrar} ${j.jugador.nombre}: *$${j.cuotaFinal.toLocaleString('es-AR')}* (${j.minutos}' jugados${j.fueExpulsado ? ' - 🟥 Exp.' : ''})${j.yaPago ? ' ✅ PAGADO' : ''}`),
+              .map(j => `• #${j.dorsalMostrar} ${j.jugador.nombre}: *$${j.cuotaFinal.toLocaleString('es-AR')}* (${j.minutos}'${j.ajustadoPorExpulsion ? ` [computa ${j.minutos}' hasta el final por expulsión - jugó ${j.minutosReales}']` : ''})${j.yaPago ? ' ✅ PAGADO' : ''}`),
             ''
           ];
 
@@ -2767,7 +2781,14 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                         </td>
 
                         <td className="py-2 px-2 text-center text-zinc-300 font-semibold">
-                          {j.minutos}'
+                          <span title={j.ajustadoPorExpulsion ? `Jugó ${j.minutosReales}', pero computa ${j.minutos}' para el costo (hasta el final)` : undefined}>
+                            {j.minutos}'
+                          </span>
+                          {j.ajustadoPorExpulsion && (
+                            <span className="block text-[8px] sm:text-[9px] text-amber-400 font-normal leading-tight">
+                              (hasta final)
+                            </span>
+                          )}
                         </td>
 
                         <td className="py-2 px-2 text-center text-[#9aa89f] text-[11px]">
