@@ -272,6 +272,13 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
                     min="1"
                     max="99"
                     autoFocus
+                    ref={(inputEl) => {
+                      if (inputEl) {
+                        inputEl.focus();
+                        inputEl.select();
+                      }
+                    }}
+                    onFocus={(e) => e.target.select()}
                     value={numeroTemp}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => setNumeroTemp(e.target.value)}
@@ -377,6 +384,13 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
                           min="1"
                           max="99"
                           autoFocus
+                          ref={(inputEl) => {
+                            if (inputEl) {
+                              inputEl.focus();
+                              inputEl.select();
+                            }
+                          }}
+                          onFocus={(e) => e.target.select()}
                           value={numeroTemp}
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) => setNumeroTemp(e.target.value)}

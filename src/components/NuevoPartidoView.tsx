@@ -31,7 +31,9 @@ import {
   Star,
   Search,
   GripVertical,
-  UserCheck
+  UserCheck,
+  BookmarkCheck,
+  Plus
 } from 'lucide-react';
 import { 
   Jugador, 
@@ -114,9 +116,13 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   });
 
   // Slots de cancha para los titulares (Paso 3): 11 puestos indexados 0 a 10
-  // Si hay formación y 11 titular predeterminado guardado en Plantel, cargarlo; sino iniciar vacío
+  // Si hay formación y 11 titular predeterminado guardado en Plantel o previa anterior, cargarlo; sino iniciar vacío
   const [canchaSlots, setCanchaSlots] = useState<(string | null)[]>(() => {
-    const baseTitulares = StorageService.getTitularesPredeterminados();
+    const conf = StorageService.getClubConfig();
+    if (conf.slotsPredeterminados && Array.isArray(conf.slotsPredeterminados) && conf.slotsPredeterminados.length === 11) {
+      return conf.slotsPredeterminados.map(id => (id && jugadoresActivos.some(j => j.id === id) ? id : null));
+    }
+    const baseTitulares = conf.titularesPredeterminados || [];
     const slots: (string | null)[] = Array(11).fill(null);
     if (baseTitulares.length > 0) {
       baseTitulares.slice(0, 11).forEach((id, idx) => {
@@ -127,6 +133,9 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     }
     return slots;
   });
+
+  // Estado para ordenar la lista de disponibles en Paso 3 ('posicion' | 'nombre' | 'numero')
+  const [ordenDisponiblesTactica, setOrdenDisponiblesTactica] = useState<'posicion' | 'nombre' | 'numero'>('posicion');
 
   // Estado para selección táctica mediante toque en pantalla (móvil / clic directo)
   const [jugadorSeleccionadoId, setJugadorSeleccionadoId] = useState<string | null>(null);
@@ -228,7 +237,20 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     const formacionBase = StorageService.getFormacionPredeterminada() || '4-3-3';
     setFormacionPropia(formacionBase);
 
-    // 2. Cargar los 11 titulares base
+    // 2. Cargar slots si existen guardados
+    const conf = StorageService.getClubConfig();
+    if (conf.slotsPredeterminados && Array.isArray(conf.slotsPredeterminados) && conf.slotsPredeterminados.length === 11) {
+      const slots = conf.slotsPredeterminados.map(id => (id && jugadoresActivos.some(j => j.id === id) ? id : null));
+      const validos = slots.filter((id): id is string => Boolean(id));
+      setConvocadosIds(prev => Array.from(new Set([...prev, ...validos])));
+      setCanchaSlots(slots);
+      setJugadorSeleccionadoId(null);
+      setMensajeExitoTactica(`✓ 11 Base y puestos cargados con esquema ${formacionBase}`);
+      setTimeout(() => setMensajeExitoTactica(null), 4000);
+      return;
+    }
+
+    // Si no hay slots específicos, cargar los 11 titulares base
     let base = StorageService.getTitularesPredeterminados();
     if (!base || base.length === 0) {
       // Si el usuario aún no configuró una base fija en Plantel, tomar los primeros 11 activos ordenados futbolísticamente
@@ -255,6 +277,17 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     setCanchaSlots(slots);
     setJugadorSeleccionadoId(null);
     setMensajeExitoTactica(`✓ 11 Base cargado en cancha con esquema ${formacionBase}`);
+    setTimeout(() => setMensajeExitoTactica(null), 4000);
+  };
+
+  const handleGuardarComoBaseDelClub = () => {
+    const titularesFinales = canchaSlots.filter((id): id is string => Boolean(id));
+    StorageService.saveClubConfig({
+      formacionPredeterminada: formacionPropia,
+      titularesPredeterminados: titularesFinales,
+      slotsPredeterminados: canchaSlots
+    });
+    setMensajeExitoTactica(`✓ Esquema ${formacionPropia} y titulares guardados como base del club`);
     setTimeout(() => setMensajeExitoTactica(null), 4000);
   };
 
@@ -516,6 +549,13 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
       }
     };
 
+    // Guardar también la última formación y slots como base del club para que se recuerde siempre
+    StorageService.saveClubConfig({
+      formacionPredeterminada: formacionPropia,
+      titularesPredeterminados: canchaSlots.filter((id): id is string => Boolean(id)),
+      slotsPredeterminados: canchaSlots
+    });
+
     StorageService.savePartidoEnVivo(draft);
     await ApiService.crearPartido(nuevoPartido, convocadosFinales, rivalesFinales);
 
@@ -551,7 +591,15 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     titular: false
   }));
 
-  // Lista filtrada de convocados para el lateral en Paso 3:
+  // Mapa de orden canónico de posiciones para la lista de disponibles
+  const POS_ORDER: Record<string, number> = {
+    'Portero': 1, 'Arquero': 1, 'Guardameta': 1, 'ARQ': 1, 'POR': 1,
+    'Defensor': 2, 'Defensa': 2, 'Lateral': 2, 'Central': 2, 'DEF': 2, 'DFC': 2, 'LI': 2, 'LD': 2,
+    'Mediocampista': 3, 'Volante': 3, 'Medio': 3, 'MED': 3, 'MC': 3, 'MCD': 3, 'MCO': 3, 'MI': 3, 'MD': 3,
+    'Delantero': 4, 'Extremo': 4, 'Punta': 4, 'DEL': 4, 'DC': 4, 'EI': 4, 'ED': 4
+  };
+
+  // Lista filtrada y ordenada de convocados para el lateral en Paso 3:
   // Se excluyen los jugadores que YA están ubicados en la cancha táctica para simplificar la selección
   const convocadosFiltradosTactica = convocadosIds
     .map(id => jugadoresMap.get(id))
@@ -562,6 +610,20 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
       const q = filtroConvocadosTactica.toLowerCase();
       const num = String(dorsalesMap[j.id] || j.numero || '');
       return j.nombre.toLowerCase().includes(q) || j.posicion.toLowerCase().includes(q) || num.includes(q);
+    })
+    .sort((a, b) => {
+      if (ordenDisponiblesTactica === 'posicion') {
+        const orderA = POS_ORDER[a.posicion] || 5;
+        const orderB = POS_ORDER[b.posicion] || 5;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.nombre.localeCompare(b.nombre);
+      } else if (ordenDisponiblesTactica === 'nombre') {
+        return a.nombre.localeCompare(b.nombre);
+      } else {
+        const numA = dorsalesMap[a.id] !== undefined ? dorsalesMap[a.id] : (a.numero || 999);
+        const numB = dorsalesMap[b.id] !== undefined ? dorsalesMap[b.id] : (b.numero || 999);
+        return numA - numB;
+      }
     });
 
   const titularesAsignadosCount = canchaSlots.filter(Boolean).length;
@@ -986,6 +1048,15 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
             </button>
             <button
               type="button"
+              onClick={handleGuardarComoBaseDelClub}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#3ddc84]/15 hover:bg-[#3ddc84] border border-[#3ddc84]/40 text-[#3ddc84] hover:text-[#0f1712] transition-all cursor-pointer flex items-center gap-1"
+              title="Guardar este esquema y los 11 titulares actuales como base del club"
+            >
+              <BookmarkCheck className="w-3.5 h-3.5" />
+              Guardar como 11 Base
+            </button>
+            <button
+              type="button"
               onClick={handleLlenarPrimeros11}
               className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-[#0f1712] border border-[#243d2c] hover:border-zinc-400 text-zinc-300 hover:text-white transition-all cursor-pointer"
             >
@@ -1051,6 +1122,40 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
               </span>
             </div>
 
+            {/* Opciones de ordenamiento de disponibles */}
+            <div className="flex items-center justify-between gap-1 flex-wrap pt-0.5">
+              <span className="text-[11px] text-zinc-400 font-medium">Ordenar por:</span>
+              <div className="inline-flex rounded-lg bg-[#182a1f] p-0.5 border border-[#243d2c]">
+                <button
+                  type="button"
+                  onClick={() => setOrdenDisponiblesTactica('posicion')}
+                  className={`px-2 py-0.5 text-[10px] font-semibold rounded transition-colors ${
+                    ordenDisponiblesTactica === 'posicion' ? 'bg-[#3ddc84] text-[#0f1712]' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Posición
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrdenDisponiblesTactica('nombre')}
+                  className={`px-2 py-0.5 text-[10px] font-semibold rounded transition-colors ${
+                    ordenDisponiblesTactica === 'nombre' ? 'bg-[#3ddc84] text-[#0f1712]' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Nombre
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrdenDisponiblesTactica('numero')}
+                  className={`px-2 py-0.5 text-[10px] font-semibold rounded transition-colors ${
+                    ordenDisponiblesTactica === 'numero' ? 'bg-[#3ddc84] text-[#0f1712]' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Número
+                </button>
+              </div>
+            </div>
+
             {/* Buscador rápido de convocados */}
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -1095,20 +1200,21 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <GripVertical className="w-3.5 h-3.5 text-zinc-500 shrink-0 cursor-grab" />
 
-                        {/* Dorsal editable directamente en la lista */}
+                        {/* Dorsal editable directamente en la lista con box amplio y auto-select */}
                         <div 
-                          className="flex items-center gap-0.5 bg-[#0f1712] px-1.5 py-0.5 rounded border border-[#243d2c] shrink-0"
+                          className="flex items-center justify-center min-w-[48px] px-2 py-1 bg-[#0a110d] rounded-lg border border-[#243d2c] shrink-0"
                           onClick={(e) => e.stopPropagation()}
-                          title="Editar dorsal"
+                          title="Editar dorsal (hacé clic para cambiar)"
                         >
-                          <span className="text-[10px] text-zinc-400 font-bold">#</span>
+                          <span className="text-[10px] text-zinc-400 font-bold mr-0.5">#</span>
                           <input
                             type="number"
                             min="1"
                             max="99"
                             value={dorsalesMap[j.id] !== undefined ? dorsalesMap[j.id] : (j.numero || 1)}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => handleEditarNumero(j.id, parseInt(e.target.value) || 1)}
-                            className="w-6 bg-transparent text-center font-bold text-xs text-[#3ddc84] focus:outline-none"
+                            className="w-8 min-w-[32px] bg-transparent text-center font-bold text-xs text-[#3ddc84] focus:outline-none"
                           />
                         </div>
 
@@ -1304,14 +1410,9 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setModalAgregarSuplenteRival(true)}
-              className="px-3 py-1.5 bg-[#0f1712] hover:bg-[#243d2c] text-white text-xs font-semibold rounded-lg border border-[#243d2c] flex items-center gap-1.5 shrink-0 cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5 text-[#ffb703]" />
-              Agregar Suplente Rival
-            </button>
+            <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-[#0f1712] border border-[#243d2c] text-white">
+              <strong className="text-[#ffb703]">{rivalesTitulares.length}</strong> Titulares • <strong className="text-zinc-400">{rivalesSuplentes.length}</strong> Suplentes
+            </span>
           </div>
         </div>
 
@@ -1354,10 +1455,16 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
 
         {/* Tabla / Lista de Nombres y Dorsales del Rival */}
         <div className="border-t border-[#243d2c] pt-4">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
-            Nombres y Apellidos de los Jugadores Rivales (Opcional)
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-[220px] overflow-y-auto p-1">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+              Nombres y Apellidos de los Jugadores Rivales (Opcional)
+            </h3>
+            <span className="text-[11px] text-zinc-500">
+              {rivalesTitulares.length} Titulares / {rivalesSuplentes.length} Suplentes
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-[220px] overflow-y-auto p-1 mb-3">
             {[...rivalesTitulares, ...rivalesSuplentes].map((r) => (
               <div
                 key={r.id}
@@ -1369,6 +1476,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                     min="1"
                     max="99"
                     value={r.numero}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) => handleEditarNumeroRival(r.id, parseInt(e.target.value) || 1)}
                     className="w-full px-1.5 py-1 bg-[#182a1f] border border-[#243d2c] rounded-lg text-center font-display font-bold text-xs text-[#ffb703] focus:outline-none focus:border-[#ffb703]"
                     title="Dorsal Rival"
@@ -1392,6 +1500,21 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                 </span>
               </div>
             ))}
+          </div>
+
+          {/* Botón de Agregar Suplente Rival colocado ergonómicamente en la zona inferior */}
+          <div className="flex items-center justify-between pt-1">
+            <button
+              type="button"
+              onClick={() => setModalAgregarSuplenteRival(true)}
+              className="px-4 py-2 bg-[#0f1712] hover:bg-[#243d2c] text-[#ffb703] hover:text-white text-xs font-semibold rounded-xl border border-[#243d2c] hover:border-[#ffb703]/50 flex items-center gap-2 cursor-pointer transition-all shadow-sm"
+            >
+              <UserPlus className="w-4 h-4 text-[#ffb703]" />
+              Agregar suplente Rival
+            </button>
+            <span className="text-[11px] text-zinc-500">
+              Total jugadores rivales: {rivalesTitulares.length + rivalesSuplentes.length}
+            </span>
           </div>
         </div>
       </div>

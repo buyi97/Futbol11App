@@ -301,6 +301,20 @@ function doPost(e) {
         });
       }
 
+      // Si se envían rivales actualizados, sincronizarlos
+      if (body.rivales && Array.isArray(body.rivales)) {
+        const sheetRiv = getOrCreateSheet_(ss, 'RivalesPartido', ['id', 'partido_id', 'numero', 'nombre']);
+        deleteRowsByFieldValue_(sheetRiv, 'partido_id', p.id);
+        body.rivales.forEach(function(r) {
+          sheetRiv.appendRow([
+            r.id || Utilities.getUuid().substring(0, 8),
+            p.id,
+            Number(r.numero) || 0,
+            r.nombre || ''
+          ]);
+        });
+      }
+
       return jsonResponse_({ ok: true, data: 'Partido actualizado con éxito' });
     }
 

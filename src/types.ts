@@ -40,6 +40,7 @@ export interface ClubConfig {
   subtitulo?: string;
   formacionPredeterminada?: string; // Formación táctica por defecto (ej: '4-3-3', '4-4-2', '4-1-3-2', '4-3-1-2')
   titularesPredeterminados?: string[]; // IDs de jugadores titulares asignados por defecto
+  slotsPredeterminados?: (string | null)[]; // 11 slots exactos de cancha
 }
 
 export interface Partido {

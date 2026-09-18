@@ -459,17 +459,21 @@ export const ApiService = {
   },
 
   /**
-   * Actualizar los datos de un partido y sus convocados en local y en Google Sheets
+   * Actualizar los datos de un partido, sus convocados y rivales en local y en Google Sheets
    */
-  async actualizarPartido(partido: Partido, convocados?: Convocado[]): Promise<ApiResponse<string>> {
+  async actualizarPartido(partido: Partido, convocados?: Convocado[], rivales?: RivalJugador[]): Promise<ApiResponse<string>> {
     StorageService.savePartido(partido);
     if (convocados && convocados.length > 0) {
       const otrosConvocados = StorageService.getConvocados().filter(c => c.partido_id !== partido.id);
       StorageService.saveConvocados([...otrosConvocados, ...convocados]);
     }
-    const res = await ApiService.request<string>('actualizarPartido', { partido, convocados });
+    if (rivales && rivales.length > 0) {
+      const otrosRivales = StorageService.getRivales().filter(r => r.partido_id !== partido.id);
+      StorageService.saveRivales([...otrosRivales, ...rivales]);
+    }
+    const res = await ApiService.request<string>('actualizarPartido', { partido, convocados, rivales });
     if (!res.ok && res.offline) {
-      StorageService.agregarAColaSync('actualizarPartido', { partido, convocados });
+      StorageService.agregarAColaSync('actualizarPartido', { partido, convocados, rivales });
     }
     return { ok: true, data: 'Partido actualizado', offline: res.offline };
   },

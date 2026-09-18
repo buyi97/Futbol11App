@@ -29,7 +29,9 @@ import {
   X,
   Calculator,
   Tag,
-  AlertTriangle
+  AlertTriangle,
+  Shirt,
+  UserPlus
 } from 'lucide-react';
 import { Partido, Jugador, Convocado, RivalJugador, Incidencia, RolUsuario, TipoIncidencia, EquipoIncidencia, Torneo } from '../types';
 import { calcularMinutosPartido, getPosicionBadge } from '../utils/footballCalculations';
@@ -48,6 +50,7 @@ interface PartidoDetalleViewProps {
   onEliminarPartido?: () => void;
   nombreEquipo?: string;
   colorPropio?: string;
+  colorRival?: string;
 }
 
 export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
@@ -61,14 +64,27 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   onVolver,
   onEliminarPartido,
   nombreEquipo,
-  colorPropio
+  colorPropio,
+  colorRival
 }) => {
   const esEditor = rol === 'editor';
   const nombreClub = nombreEquipo || StorageService.getNombreEquipo();
-  const colorClub = colorPropio || StorageService.getColorPropio();
+  const colorClub = colorPropio || StorageService.getColorPropio() || '#3ddc84';
+  const colorRivalElegido = colorRival || StorageService.getColorRival() || '#e63946';
 
   const [modalEliminarPartido, setModalEliminarPartido] = useState(false);
   const [borrandoPartido, setBorrandoPartido] = useState(false);
+
+  // Estados locales editables para convocados y rivales
+  const [convocadosLocales, setConvocadosLocales] = useState<Convocado[]>(() => convocados);
+  const [rivalesLocales, setRivalesLocales] = useState<RivalJugador[]>(() => rivales || []);
+  const [modalEditarAlineaciones, setModalEditarAlineaciones] = useState(false);
+  const [tabAlineaciones, setTabAlineaciones] = useState<'propio' | 'rival'>('propio');
+  const [jugadorAConvocarId, setJugadorAConvocarId] = useState('');
+  const [nuevoRivalNombre, setNuevoRivalNombre] = useState('');
+  const [nuevoRivalNumero, setNuevoRivalNumero] = useState<number>(12);
+  const [nuevoRivalTitular, setNuevoRivalTitular] = useState(false);
+  const [guardandoAlineaciones, setGuardandoAlineaciones] = useState(false);
 
   const handleConfirmarEliminarPartido = async () => {
     setBorrandoPartido(true);
@@ -128,9 +144,129 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   useEffect(() => {
     setPartidoEditado(partido);
     setIncidenciasLocales(incidencias);
-  }, [partido, incidencias]);
+    setConvocadosLocales(convocados);
+    setRivalesLocales(rivales || []);
+  }, [partido, incidencias, convocados, rivales]);
 
-  const detallesMinutos = calcularMinutosPartido(partidoEditado, convocados, jugadores, incidenciasLocales);
+  // Handlers para edición de alineaciones y dorsales (Partido terminado)
+  const handleToggleTitularPropio = (jugadorId: string) => {
+    setConvocadosLocales(prev => prev.map(c => {
+      if (c.jugador_id === jugadorId) {
+        return { ...c, titular: !c.titular };
+      }
+      return c;
+    }));
+  };
+
+  const handleCambiarNumeroPropio = (jugadorId: string, nuevoNumero: number) => {
+    setConvocadosLocales(prev => prev.map(c => {
+      if (c.jugador_id === jugadorId) {
+        return { ...c, numero: nuevoNumero };
+      }
+      return c;
+    }));
+  };
+
+  const handleDesconvocarJugador = (jugadorId: string) => {
+    setConvocadosLocales(prev => prev.filter(c => c.jugador_id !== jugadorId));
+  };
+
+  const handleAgregarConvocado = () => {
+    if (!jugadorAConvocarId) return;
+    const jug = jugadores.find(j => j.id === jugadorAConvocarId);
+    if (!jug) return;
+    if (convocadosLocales.some(c => c.jugador_id === jugadorAConvocarId)) return;
+
+    const nuevoConvocado: Convocado = {
+      id: `conv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      partido_id: partidoEditado.id,
+      jugador_id: jug.id,
+      titular: convocadosLocales.filter(c => c.titular).length < 11,
+      numero: jug.numero,
+      posicion: jug.posicion
+    };
+
+    setConvocadosLocales(prev => [...prev, nuevoConvocado]);
+    setJugadorAConvocarId('');
+  };
+
+  const handleToggleTitularRival = (rivalId: string) => {
+    setRivalesLocales(prev => prev.map(r => {
+      if (r.id === rivalId) {
+        return { ...r, titular: !r.titular };
+      }
+      return r;
+    }));
+  };
+
+  const handleCambiarNumeroRival = (rivalId: string, nuevoNum: number) => {
+    setRivalesLocales(prev => prev.map(r => {
+      if (r.id === rivalId) {
+        return { ...r, numero: nuevoNum };
+      }
+      return r;
+    }));
+  };
+
+  const handleCambiarNombreRival = (rivalId: string, nuevoNom: string) => {
+    setRivalesLocales(prev => prev.map(r => {
+      if (r.id === rivalId) {
+        return { ...r, nombre: nuevoNom };
+      }
+      return r;
+    }));
+  };
+
+  const handleAgregarJugadorRival = () => {
+    if (!nuevoRivalNumero) return;
+    const nuevoR: RivalJugador = {
+      id: `rival_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      partido_id: partidoEditado.id,
+      nombre: nuevoRivalNombre.trim() || `Jugador #${nuevoRivalNumero}`,
+      numero: Number(nuevoRivalNumero),
+      posicion: 'Rival',
+      titular: nuevoRivalTitular
+    };
+    setRivalesLocales(prev => [...prev, nuevoR]);
+    setNuevoRivalNombre('');
+    setNuevoRivalNumero(prev => prev + 1);
+  };
+
+  const handleEliminarJugadorRival = (rivalId: string) => {
+    setRivalesLocales(prev => prev.filter(r => r.id !== rivalId));
+  };
+
+  const handleGuardarAlineacionesYDorsales = async () => {
+    setGuardandoAlineaciones(true);
+    try {
+      // 1. Guardar convocados en StorageService
+      const todosLosConvocados = StorageService.getConvocados().filter(c => c.partido_id !== partidoEditado.id);
+      StorageService.saveConvocados([...todosLosConvocados, ...convocadosLocales]);
+
+      // 2. Guardar rivales en StorageService
+      const todosLosRivales = StorageService.getRivales().filter(r => r.partido_id !== partidoEditado.id);
+      StorageService.saveRivales([...todosLosRivales, ...rivalesLocales]);
+
+      // 3. Sincronizar con backend si está disponible
+      try {
+        await ApiService.actualizarPartido(partidoEditado, convocadosLocales, rivalesLocales);
+      } catch (err) {
+        console.warn('Error al sincronizar alineaciones con el backend:', err);
+      }
+
+      setGuardadoExitoso(true);
+      setTimeout(() => setGuardadoExitoso(false), 3000);
+      setModalEditarAlineaciones(false);
+
+      if (onActualizarPartido) {
+        onActualizarPartido();
+      }
+    } finally {
+      setGuardandoAlineaciones(false);
+    }
+  };
+
+  const detallesMinutos = calcularMinutosPartido(partidoEditado, convocadosLocales, jugadores, incidenciasLocales);
   const duracionTotalMin = (partidoEditado.duracion_tiempo_min || 40) * 2 + (partidoEditado.agregado_1T || 0) + (partidoEditado.agregado_2T || 0);
 
   // Ordenar incidencias cronológicamente
@@ -141,7 +277,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   });
 
   const jugadoresMap = new Map<string, Jugador>(jugadores.map(j => [j.id, j]));
-  const convocadosMap = new Map<string, Convocado>(convocados.map(c => [c.jugador_id, c]));
+  const convocadosMap = new Map<string, Convocado>(convocadosLocales.map(c => [c.jugador_id, c]));
 
   // Incidencias principales para el encabezado (Goles, Tarjetas, Cambios) ordenadas cronológicamente
   const incidenciasPrincipales = React.useMemo(() => {
@@ -689,7 +825,15 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
               Recalcular Marcador ({golesPropios} - {golesRival}) según Incidencias
             </button>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setModalEditarAlineaciones(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#182a1f] border border-[#3ddc84]/50 hover:border-[#3ddc84] text-[#3ddc84] text-xs font-bold rounded-lg cursor-pointer transition-colors shadow"
+              >
+                <Shirt className="w-3.5 h-3.5" />
+                Editar 11 y Dorsales
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -755,9 +899,9 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
               {partidoEditado.estado === 'finalizado' ? 'Resultado Final' : 'Partido en Curso'}
             </span>
             <div className="font-display font-bold text-4xl sm:text-5xl text-white tracking-widest">
-              <span className="text-[#3ddc84]">{partidoEditado.resultado_propio}</span>
+              <span style={{ color: colorClub }}>{partidoEditado.resultado_propio}</span>
               <span className="text-[#9aa89f] mx-2">-</span>
-              <span className="text-[#ffb703]">{partidoEditado.resultado_rival}</span>
+              <span style={{ color: colorRivalElegido }}>{partidoEditado.resultado_rival}</span>
             </div>
             <div className="text-[11px] text-[#9aa89f] mt-1">
               1T (+{partidoEditado.agregado_1T || 0}') • 2T (+{partidoEditado.agregado_2T || 0}')
@@ -766,7 +910,10 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
 
           {/* Rival */}
           <div className="text-center md:text-right flex-1">
-            <span className="text-xs font-bold text-[#ffb703] uppercase tracking-wider block mb-1">
+            <span 
+              className="text-xs font-bold uppercase tracking-wider block mb-1"
+              style={{ color: colorRivalElegido }}
+            >
               Equipo Rival
             </span>
             <h2 className="font-display font-bold text-2xl sm:text-3xl text-white">
@@ -776,53 +923,142 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
 
         </div>
 
-        {/* Columnas de Incidencias Principales (Local a la izquierda, Visitante a la derecha) */}
-        <div className="mt-6 pt-4 border-t border-[#243d2c] grid grid-cols-1 md:grid-cols-2 gap-5">
-          {/* Columna Izquierda: Local */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between border-b border-[#243d2c]/80 pb-1.5">
-              <span className="font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5" style={{ color: colorColumnaLocal }}>
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colorColumnaLocal }} />
-                {tituloColumnaLocal}
-              </span>
-              <span className="text-[10px] text-[#9aa89f] font-mono font-medium">
-                {incidenciasLocal.length} {incidenciasLocal.length === 1 ? 'incidencia' : 'incidencias'}
-              </span>
+        {/* Línea de Tiempo Única y Cronológica de Incidencias Principales */}
+        <div className="mt-6 pt-5 border-t border-[#243d2c]">
+          {incidenciasPrincipales.length === 0 ? (
+            <div className="py-3 text-center text-xs text-[#9aa89f] italic">
+              Sin incidencias principales registradas en este encuentro
             </div>
+          ) : (
+            <div className="relative space-y-2.5 sm:space-y-3 before:hidden sm:before:block sm:before:absolute sm:before:inset-y-0 sm:before:left-1/2 sm:before:-translate-x-1/2 sm:before:w-0.5 sm:before:bg-[#243d2c]">
+              {incidenciasPrincipales.map((inc) => {
+                const esPropio = inc.equipo === 'propio';
+                const conv = esPropio ? convocadosMap.get(inc.jugador_id || '') : undefined;
+                const jug = esPropio ? jugadoresMap.get(inc.jugador_id || '') : undefined;
+                const convSec = esPropio && inc.jugador_id_secundario ? convocadosMap.get(inc.jugador_id_secundario) : undefined;
+                const jugSec = esPropio && inc.jugador_id_secundario ? jugadoresMap.get(inc.jugador_id_secundario) : undefined;
+                const rivalObj = !esPropio ? rivalesLocales.find(r => r.id === inc.jugador_id || String(r.numero) === inc.jugador_id) : undefined;
 
-            {incidenciasLocal.length === 0 ? (
-              <div className="py-2 text-[11px] text-zinc-500 italic">
-                Sin incidencias registradas
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {incidenciasLocal.map(renderItemIncidenciaEncabezado)}
-              </div>
-            )}
-          </div>
+                let icono = '⚽';
+                let textoPrincipal = '';
+                let detalleSecundario = '';
 
-          {/* Columna Derecha: Visitante */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between border-b border-[#243d2c]/80 pb-1.5">
-              <span className="font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5" style={{ color: colorColumnaVisitante }}>
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colorColumnaVisitante }} />
-                {tituloColumnaVisitante}
-              </span>
-              <span className="text-[10px] text-[#9aa89f] font-mono font-medium">
-                {incidenciasVisitante.length} {incidenciasVisitante.length === 1 ? 'incidencia' : 'incidencias'}
-              </span>
+                if (inc.tipo === 'gol') {
+                  icono = '⚽';
+                  if (esPropio) {
+                    const num = conv?.numero ?? jug?.numero;
+                    const nombre = jug?.nombre || 'Jugador';
+                    textoPrincipal = num ? `#${num} ${nombre}` : nombre;
+                    if (convSec || jugSec) {
+                      const numSec = convSec?.numero ?? jugSec?.numero;
+                      const nomSec = jugSec?.nombre || '';
+                      detalleSecundario = `Asist: ${numSec ? `#${numSec} ` : ''}${nomSec}`;
+                    }
+                  } else {
+                    if (rivalObj?.nombre) {
+                      textoPrincipal = `${rivalObj.nombre} (#${rivalObj.numero})`;
+                    } else {
+                      textoPrincipal = `Dorsal #${rivalObj?.numero || inc.jugador_id || ''} rival`;
+                    }
+                  }
+                } else if (inc.tipo === 'autogol') {
+                  icono = '⚽🥅';
+                  textoPrincipal = esPropio ? `Autogol #${conv?.numero ?? jug?.numero ?? ''} (e/c)` : 'Autogol rival (e/c)';
+                } else if (inc.tipo === 'amarilla') {
+                  icono = '🟨';
+                  if (esPropio) {
+                    const num = conv?.numero ?? jug?.numero;
+                    textoPrincipal = `${num ? `#${num} ` : ''}${jug?.nombre || 'Jugador'}`;
+                  } else {
+                    textoPrincipal = rivalObj?.nombre ? `${rivalObj.nombre} (#${rivalObj.numero})` : `Dorsal #${rivalObj?.numero || inc.jugador_id || ''}`;
+                  }
+                } else if (inc.tipo === 'doble_amarilla') {
+                  icono = '🟨🟥';
+                  if (esPropio) {
+                    const num = conv?.numero ?? jug?.numero;
+                    textoPrincipal = `${num ? `#${num} ` : ''}${jug?.nombre || 'Jugador'} (Doble Amarilla)`;
+                  } else {
+                    textoPrincipal = `${rivalObj?.nombre ? rivalObj.nombre : `Dorsal #${rivalObj?.numero || inc.jugador_id || ''}`} (Doble Amarilla)`;
+                  }
+                } else if (inc.tipo === 'roja_directa') {
+                  icono = '🟥';
+                  if (esPropio) {
+                    const num = conv?.numero ?? jug?.numero;
+                    textoPrincipal = `${num ? `#${num} ` : ''}${jug?.nombre || 'Jugador'} (Roja Directa)`;
+                  } else {
+                    textoPrincipal = `${rivalObj?.nombre ? rivalObj.nombre : `Dorsal #${rivalObj?.numero || inc.jugador_id || ''}`} (Roja Directa)`;
+                  }
+                } else if (inc.tipo === 'cambio') {
+                  icono = '🔄';
+                  if (esPropio) {
+                    const numSale = conv?.numero ?? jug?.numero;
+                    const nomSale = jug?.nombre || 'Sale';
+                    const numEntra = convSec?.numero ?? jugSec?.numero;
+                    const nomEntra = jugSec?.nombre || 'Entra';
+                    textoPrincipal = `Entra: ${numEntra ? `#${numEntra} ` : ''}${nomEntra}`;
+                    detalleSecundario = `Sale: ${numSale ? `#${numSale} ` : ''}${nomSale}`;
+                  } else {
+                    textoPrincipal = inc.detalle || 'Cambio en equipo rival';
+                  }
+                }
+
+                return (
+                  <div
+                    key={inc.id}
+                    className={`flex items-center gap-3 sm:gap-4 w-full ${
+                      esPropio ? 'sm:flex-row' : 'sm:flex-row-reverse'
+                    }`}
+                  >
+                    {/* Tarjeta del evento alineada al lado correspondiente */}
+                    <div className={`flex-1 ${esPropio ? 'text-left' : 'text-right'}`}>
+                      <div
+                        className={`inline-flex items-center gap-2 py-1.5 px-3 rounded-xl border transition-all ${
+                          esPropio
+                            ? 'bg-[#0f1712]/90 border-[#243d2c] hover:border-[#3ddc84]/60'
+                            : 'bg-[#0f1712]/90 border-[#243d2c] hover:border-[#ffb703]/60'
+                        }`}
+                        style={{
+                          borderLeftWidth: esPropio ? '3px' : undefined,
+                          borderLeftColor: esPropio ? colorClub : undefined,
+                          borderRightWidth: !esPropio ? '3px' : undefined,
+                          borderRightColor: !esPropio ? colorRivalElegido : undefined,
+                        }}
+                      >
+                        {esPropio && <span className="text-base shrink-0">{icono}</span>}
+                        <div className={`min-w-0 ${esPropio ? 'text-left' : 'text-right'}`}>
+                          <div className="text-xs font-semibold text-white truncate max-w-[200px] sm:max-w-[260px]">
+                            {textoPrincipal}
+                          </div>
+                          {detalleSecundario && (
+                            <div className="text-[10px] text-[#9aa89f] truncate max-w-[200px] sm:max-w-[260px]">
+                              {detalleSecundario}
+                            </div>
+                          )}
+                        </div>
+                        {!esPropio && <span className="text-base shrink-0">{icono}</span>}
+                      </div>
+                    </div>
+
+                    {/* Badge Minuto Central */}
+                    <div
+                      className="shrink-0 z-10 w-9 h-9 rounded-full flex items-center justify-center font-mono font-bold text-xs shadow-md border"
+                      style={{
+                        backgroundColor: '#0f1712',
+                        borderColor: esPropio ? colorClub : colorRivalElegido,
+                        color: esPropio ? colorClub : colorRivalElegido,
+                      }}
+                      title={`${inc.minuto}' • ${esPropio ? nombreClub : partidoEditado.rival}`}
+                    >
+                      {inc.minuto}'
+                    </div>
+
+                    {/* Espacio vacío para equilibrar el otro lado en pantallas medianas/grandes */}
+                    <div className="hidden sm:block flex-1" />
+                  </div>
+                );
+              })}
             </div>
-
-            {incidenciasVisitante.length === 0 ? (
-              <div className="py-2 text-[11px] text-zinc-500 italic">
-                Sin incidencias registradas
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {incidenciasVisitante.map(renderItemIncidenciaEncabezado)}
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Metadatos del Encuentro */}
@@ -966,16 +1202,29 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
         
         {/* Tabla de Convocados y Minutos Jugados (2 columnas) */}
         <div className="lg:col-span-2 bg-[#182a1f] border border-[#243d2c] rounded-2xl p-5 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <Users className="w-5 h-5 text-[#3ddc84]" />
               <h3 className="font-display font-bold text-lg text-white uppercase tracking-wider">
                 Planilla de Jugadores & Minutos Jugados
               </h3>
             </div>
-            <span className="text-xs text-[#9aa89f]">
-              {detallesMinutos.length} convocados
-            </span>
+            <div className="flex items-center gap-2">
+              {esEditor && (
+                <button
+                  type="button"
+                  onClick={() => setModalEditarAlineaciones(true)}
+                  className="px-3 py-1.5 bg-[#3ddc84]/15 hover:bg-[#3ddc84]/25 border border-[#3ddc84]/40 hover:border-[#3ddc84] text-[#3ddc84] rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+                  title="Editar 11 inicial, suplentes y dorsales propios y rivales"
+                >
+                  <Shirt className="w-3.5 h-3.5" />
+                  <span>Editar 11 y Dorsales</span>
+                </button>
+              )}
+              <span className="text-xs text-[#9aa89f]">
+                {detallesMinutos.length} convocados
+              </span>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -993,13 +1242,15 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
               <tbody className="divide-y divide-[#243d2c]/60">
                 {detallesMinutos.map((item) => {
                   const badge = getPosicionBadge(item.jugador.posicion);
+                  const conv = convocadosMap.get(item.jugador.id);
+                  const dorsalMostrar = conv?.numero !== undefined && conv?.numero !== null ? conv.numero : item.jugador.numero;
 
                   return (
                     <tr key={item.jugador.id} className="hover:bg-[#0f1712]/50 transition-colors">
                       <td className="sticky left-0 z-10 bg-[#182a1f] border-r border-[#243d2c]/80 py-2 px-2.5 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)]">
                         <div className="flex items-center gap-1.5 max-w-[110px] sm:max-w-none">
                           <span className="font-display font-bold text-xs sm:text-sm text-[#3ddc84] shrink-0">
-                            #{item.jugador.numero}
+                            #{dorsalMostrar}
                           </span>
                           <span className="font-semibold text-white truncate text-xs">
                             {item.jugador.nombre}
@@ -1846,6 +2097,329 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                 {borrandoPartido ? 'Borrando...' : 'Sí, Borrar Partido Definitivamente'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: EDITAR 11 INICIAL Y DORSALES (PARTIDO TERMINADO)                   */}
+      {/* ========================================================================= */}
+      {modalEditarAlineaciones && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl w-full max-w-2xl p-5 sm:p-6 shadow-2xl relative max-h-[92vh] flex flex-col">
+            
+            {/* Cerrar */}
+            <button
+              type="button"
+              onClick={() => {
+                setConvocadosLocales(convocados);
+                setRivalesLocales(rivales || []);
+                setModalEditarAlineaciones(false);
+              }}
+              className="absolute top-4 right-4 text-[#9aa89f] hover:text-white p-1 rounded-lg cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Encabezado */}
+            <div className="mb-4 pr-8">
+              <div className="flex items-center gap-2">
+                <Shirt className="w-5 h-5 text-[#3ddc84]" />
+                <h3 className="font-display font-bold text-lg sm:text-xl text-white uppercase tracking-wider">
+                  Editar 11 Inicial y Dorsales
+                </h3>
+              </div>
+              <p className="text-xs text-[#9aa89f] mt-1">
+                Ajustá los dorsales y la condición de titular o suplente de los jugadores propios y rivales. Los minutos y estadísticas se recalcularán automáticamente.
+              </p>
+            </div>
+
+            {/* Pestañas: Nuestro Plantel vs Rival */}
+            <div className="flex items-center gap-2 mb-4 p-1 bg-[#0f1712] rounded-xl border border-[#243d2c]">
+              <button
+                type="button"
+                onClick={() => setTabAlineaciones('propio')}
+                className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  tabAlineaciones === 'propio'
+                    ? 'bg-[#3ddc84] text-[#0f1712] shadow'
+                    : 'text-[#9aa89f] hover:text-white'
+                }`}
+              >
+                <span>{nombreClub}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  tabAlineaciones === 'propio' ? 'bg-[#0f1712]/20 text-[#0f1712] font-bold' : 'bg-zinc-800 text-zinc-300'
+                }`}>
+                  {convocadosLocales.filter(c => c.titular).length}/11 Titulares
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTabAlineaciones('rival')}
+                className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  tabAlineaciones === 'rival'
+                    ? 'bg-[#ffb703] text-[#0f1712] shadow'
+                    : 'text-[#9aa89f] hover:text-white'
+                }`}
+              >
+                <span>{partidoEditado.rival}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  tabAlineaciones === 'rival' ? 'bg-[#0f1712]/20 text-[#0f1712] font-bold' : 'bg-zinc-800 text-zinc-300'
+                }`}>
+                  {rivalesLocales.filter(r => r.titular).length} Titulares
+                </span>
+              </button>
+            </div>
+
+            {/* Contenido scrolleable */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-3 min-h-0">
+              {tabAlineaciones === 'propio' ? (
+                <div className="space-y-3">
+                  {/* Selector para agregar nuevo convocado del plantel */}
+                  {jugadores.filter(j => !convocadosLocales.some(c => c.jugador_id === j.id)).length > 0 && (
+                    <div className="p-3 rounded-xl bg-[#0f1712] border border-[#243d2c] flex items-center gap-2">
+                      <select
+                        value={jugadorAConvocarId}
+                        onChange={(e) => setJugadorAConvocarId(e.target.value)}
+                        className="flex-1 bg-[#182a1f] border border-[#243d2c] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#3ddc84]"
+                      >
+                        <option value="">-- Agregar otro jugador del plantel a este partido --</option>
+                        {jugadores
+                          .filter(j => !convocadosLocales.some(c => c.jugador_id === j.id))
+                          .map(j => (
+                            <option key={j.id} value={j.id}>
+                              #{j.numero} {j.nombre} ({j.posicion})
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleAgregarConvocado}
+                        disabled={!jugadorAConvocarId}
+                        className="px-3 py-1.5 bg-[#3ddc84] hover:bg-[#2bb46a] disabled:opacity-40 disabled:hover:bg-[#3ddc84] text-[#0f1712] font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Convocar</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Lista de convocados */}
+                  <div className="space-y-2">
+                    {convocadosLocales.map((c) => {
+                      const jug = jugadoresMap.get(c.jugador_id);
+                      const badge = getPosicionBadge(jug?.posicion || 'Mediocampista');
+                      const dorsalActual = c.numero !== undefined && c.numero !== null ? c.numero : (jug?.numero || 1);
+
+                      return (
+                        <div
+                          key={c.jugador_id}
+                          className="p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84]/40 flex items-center justify-between gap-3 transition-colors"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            {/* Input de Dorsal */}
+                            <div className="flex items-center gap-1 bg-[#182a1f] px-2 py-1 rounded-lg border border-[#243d2c] shrink-0" title="Editar dorsal en este partido">
+                              <span className="text-[10px] text-zinc-400 font-bold">#</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="99"
+                                value={dorsalActual}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  if (!isNaN(val)) {
+                                    handleCambiarNumeroPropio(c.jugador_id, val);
+                                  }
+                                }}
+                                className="w-9 bg-transparent text-center font-bold text-sm text-[#3ddc84] focus:outline-none"
+                              />
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <span className="text-xs font-semibold text-white truncate block">
+                                {jug?.nombre || 'Jugador ' + c.jugador_id}
+                              </span>
+                              <span className={`text-[9px] font-medium px-1.5 py-0.2 rounded border ${badge.bg}`}>
+                                {badge.label}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Toggle Titular / Suplente & Desconvocar */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTitularPropio(c.jugador_id)}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                c.titular
+                                  ? 'bg-[#3ddc84] text-[#0f1712] shadow-sm'
+                                  : 'bg-[#182a1f] text-[#9aa89f] border border-[#243d2c] hover:text-white'
+                              }`}
+                            >
+                              {c.titular ? 'TITULAR' : 'SUPLENTE'}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDesconvocarJugador(c.jugador_id)}
+                              className="p-1.5 text-zinc-500 hover:text-[#e63946] hover:bg-[#e63946]/10 rounded-lg transition-colors cursor-pointer"
+                              title="Quitar de este partido"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                /* Pestaña Rival */
+                <div className="space-y-3">
+                  {/* Formulario rápido para agregar rival */}
+                  <div className="p-3 bg-[#0f1712] border border-[#243d2c] rounded-xl space-y-2">
+                    <span className="text-[11px] font-bold text-[#ffb703] uppercase tracking-wider block">
+                      + Agregar Jugador Rival
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 bg-[#182a1f] px-2 py-1.5 rounded-lg border border-[#243d2c] shrink-0">
+                        <span className="text-[10px] text-zinc-400 font-bold">#</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="99"
+                          value={nuevoRivalNumero}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => setNuevoRivalNumero(parseInt(e.target.value) || 1)}
+                          className="w-9 bg-transparent text-center font-bold text-xs text-[#ffb703] focus:outline-none"
+                          placeholder="Num"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Nombre o apodo rival (ej: Gómez, 9 de área...)"
+                        value={nuevoRivalNombre}
+                        onChange={(e) => setNuevoRivalNombre(e.target.value)}
+                        className="flex-1 px-2.5 py-1.5 bg-[#182a1f] border border-[#243d2c] rounded-lg text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#ffb703]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setNuevoRivalTitular(!nuevoRivalTitular)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                          nuevoRivalTitular
+                            ? 'bg-[#ffb703] text-[#0f1712]'
+                            : 'bg-[#182a1f] text-[#9aa89f] border border-[#243d2c]'
+                        }`}
+                      >
+                        {nuevoRivalTitular ? 'Titular' : 'Suplente'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAgregarJugadorRival}
+                        className="px-3 py-1.5 bg-[#ffb703] hover:bg-[#e0a200] text-[#0f1712] font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Agregar</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lista de rivales */}
+                  {rivalesLocales.length === 0 ? (
+                    <div className="text-center py-6 text-zinc-500 text-xs">
+                      No hay jugadores rivales cargados en este partido. Podés agregarlos arriba con su dorsal y nombre.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {rivalesLocales.map((r) => (
+                        <div
+                          key={r.id}
+                          className="p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#ffb703]/40 flex items-center justify-between gap-2.5 transition-colors"
+                        >
+                          {/* Dorsal editable */}
+                          <div className="flex items-center gap-1 bg-[#182a1f] px-2 py-1 rounded-lg border border-[#243d2c] shrink-0" title="Editar dorsal rival">
+                            <span className="text-[10px] text-zinc-400 font-bold">#</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="99"
+                              value={r.numero}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (!isNaN(val)) {
+                                  handleCambiarNumeroRival(r.id, val);
+                                }
+                              }}
+                              className="w-9 bg-transparent text-center font-bold text-sm text-[#ffb703] focus:outline-none"
+                            />
+                          </div>
+
+                          {/* Nombre editable */}
+                          <input
+                            type="text"
+                            value={r.nombre || ''}
+                            placeholder={`Rival #${r.numero}`}
+                            onChange={(e) => handleCambiarNombreRival(r.id, e.target.value)}
+                            className="flex-1 px-2.5 py-1.5 bg-[#182a1f] border border-[#243d2c] rounded-lg text-xs text-white focus:outline-none focus:border-[#ffb703]"
+                          />
+
+                          {/* Toggle Titular / Suplente Rival */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleTitularRival(r.id)}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                              r.titular
+                                ? 'bg-[#ffb703] text-[#0f1712]'
+                                : 'bg-[#182a1f] text-[#9aa89f] border border-[#243d2c] hover:text-white'
+                            }`}
+                          >
+                            {r.titular ? 'TITULAR' : 'SUPLENTE'}
+                          </button>
+
+                          {/* Quitar rival */}
+                          <button
+                            type="button"
+                            onClick={() => handleEliminarJugadorRival(r.id)}
+                            className="p-1.5 text-zinc-500 hover:text-[#e63946] hover:bg-[#e63946]/10 rounded-lg transition-colors cursor-pointer shrink-0"
+                            title="Eliminar este rival"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Pie del modal */}
+            <div className="flex items-center justify-between pt-3 mt-3 border-t border-[#243d2c]">
+              <button
+                type="button"
+                onClick={() => {
+                  setConvocadosLocales(convocados);
+                  setRivalesLocales(rivales || []);
+                  setModalEditarAlineaciones(false);
+                }}
+                className="px-4 py-2 bg-transparent border border-[#243d2c] text-[#9aa89f] hover:text-white rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                disabled={guardandoAlineaciones}
+                onClick={handleGuardarAlineacionesYDorsales}
+                className="px-5 py-2 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer flex items-center gap-1.5 shadow-lg shadow-[#3ddc84]/20"
+              >
+                <Save className="w-4 h-4" />
+                <span>{guardandoAlineaciones ? 'Guardando...' : 'Guardar 11 y Dorsales'}</span>
+              </button>
+            </div>
+
           </div>
         </div>
       )}

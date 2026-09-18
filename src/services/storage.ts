@@ -557,7 +557,9 @@ export const StorageService = {
         colorPropio: parsed.colorPropio || DEFAULT_CLUB_CONFIG.colorPropio,
         colorRival: parsed.colorRival || DEFAULT_CLUB_CONFIG.colorRival,
         subtitulo: parsed.subtitulo || DEFAULT_CLUB_CONFIG.subtitulo,
-        formacionPredeterminada: parsed.formacionPredeterminada || '4-3-3'
+        formacionPredeterminada: parsed.formacionPredeterminada || '4-3-3',
+        titularesPredeterminados: Array.isArray(parsed.titularesPredeterminados) ? parsed.titularesPredeterminados : [],
+        slotsPredeterminados: Array.isArray(parsed.slotsPredeterminados) ? parsed.slotsPredeterminados : undefined
       };
     } catch {
       return DEFAULT_CLUB_CONFIG;
@@ -591,6 +593,14 @@ export const StorageService = {
 
   saveTitularesPredeterminados(ids: string[]): void {
     this.saveClubConfig({ titularesPredeterminados: ids });
+  },
+
+  getSlotsPredeterminados(): (string | null)[] | undefined {
+    return this.getClubConfig().slotsPredeterminados;
+  },
+
+  saveSlotsPredeterminados(slots: (string | null)[]): void {
+    this.saveClubConfig({ slotsPredeterminados: slots });
   },
 
   getNombreEquipo(): string {

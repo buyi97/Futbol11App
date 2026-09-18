@@ -45,6 +45,7 @@ export default function App() {
   const [syncToastType, setSyncToastType] = useState<'success' | 'info' | 'error'>('info');
   const [nombreEquipo, setNombreEquipo] = useState<string>(() => StorageService.getNombreEquipo());
   const [colorPropio, setColorPropio] = useState<string>(() => StorageService.getColorPropio());
+  const [colorRival, setColorRival] = useState<string>(() => StorageService.getColorRival());
 
   // Inicialización de datos
   const cargarDatosLocales = useCallback(() => {
@@ -75,12 +76,14 @@ export default function App() {
     setHayPartidoEnVivo(StorageService.getPartidoEnVivo() !== null);
     setNombreEquipo(StorageService.getNombreEquipo());
     setColorPropio(StorageService.getColorPropio());
+    setColorRival(StorageService.getColorRival());
   }, []);
 
   useEffect(() => {
     const handleClubConfigChange = () => {
       setNombreEquipo(StorageService.getNombreEquipo());
       setColorPropio(StorageService.getColorPropio());
+      setColorRival(StorageService.getColorRival());
     };
     window.addEventListener('club-config-changed', handleClubConfigChange);
     return () => window.removeEventListener('club-config-changed', handleClubConfigChange);
@@ -308,6 +311,7 @@ export default function App() {
             onVolver={() => setVistaActual('inicio')}
             nombreEquipo={nombreEquipo}
             colorPropio={colorPropio}
+            colorRival={colorRival}
           />
         )}
 
@@ -345,8 +349,9 @@ export default function App() {
               setVistaActual('historial');
             }}
             onVolver={() => setVistaActual('historial')}
-            nombreEquipo={StorageService.getNombreEquipo()}
-            colorPropio={StorageService.getColorPropio()}
+            nombreEquipo={nombreEquipo}
+            colorPropio={colorPropio}
+            colorRival={colorRival}
           />
         )}
 
