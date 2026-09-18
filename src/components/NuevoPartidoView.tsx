@@ -416,23 +416,31 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     setRivalesSuplentes(prev => prev.filter(r => r.id !== id));
   };
 
-  const handleAgregarSuplenteRivalSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAgregarSuplenteRivalSubmit = (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const num = Number(nuevoSuplenteRivalNum);
+    if (!num || num < 1) return;
     const nuevo: RivalItem = {
       id: `riv-s-${Date.now()}`,
-      numero: Number(nuevoSuplenteRivalNum) || 12,
+      numero: num,
       nombre: nuevoSuplenteRivalNom.trim(),
       titular: false
     };
     setRivalesSuplentes(prev => [...prev, nuevo]);
-    setNuevoSuplenteRivalNum(Number(nuevoSuplenteRivalNum) + 1);
+    setNuevoSuplenteRivalNum(num + 1);
     setNuevoSuplenteRivalNom('');
     setModalAgregarSuplenteRival(false);
   };
 
   // --- INICIAR PARTIDO ---
-  const handleComenzarPartido = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleComenzarPartido = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setErrorValidacion(null);
 
     if (!rival.trim()) {
@@ -560,10 +568,13 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     };
 
     // Guardar también la última formación y slots como base del club para que se recuerde siempre
-    StorageService.saveClubConfig({
+    const updatedClubConfig = StorageService.saveClubConfig({
       formacionPredeterminada: formacionPropia,
       titularesPredeterminados: canchaSlots.filter((id): id is string => Boolean(id)),
       slotsPredeterminados: canchaSlots
+    });
+    ApiService.guardarClubConfig(updatedClubConfig).catch(err => {
+      console.warn('Sincronización en segundo plano de configuración táctica base:', err);
     });
 
     StorageService.savePartidoEnVivo(draft);
@@ -663,7 +674,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   });
 
   return (
-    <form onSubmit={handleComenzarPartido} className="space-y-6 pb-16">
+    <div className="space-y-6 pb-16">
       
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -1562,7 +1573,8 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
 
         <button
           id="btn-iniciar-partido-submit"
-          type="submit"
+          type="button"
+          onClick={handleComenzarPartido}
           disabled={iniciando}
           className="px-7 py-3.5 bg-[#3ddc84] hover:bg-[#2bb46a] text-[#0f1712] font-bold font-display text-lg tracking-wider rounded-xl shadow-xl shadow-[#3ddc84]/25 flex items-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
         >
@@ -1589,7 +1601,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleAgregarSuplenteRivalSubmit} className="space-y-3 text-xs">
+            <div className="space-y-3 text-xs">
               <div>
                 <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
                   Número / Dorsal *
@@ -1601,6 +1613,12 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                   required
                   value={nuevoSuplenteRivalNum}
                   onChange={(e) => setNuevoSuplenteRivalNum(Number(e.target.value))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAgregarSuplenteRivalSubmit();
+                    }
+                  }}
                   className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white font-bold text-sm focus:outline-none"
                 />
               </div>
@@ -1614,6 +1632,12 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                   placeholder="Ej: Martínez"
                   value={nuevoSuplenteRivalNom}
                   onChange={(e) => setNuevoSuplenteRivalNom(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAgregarSuplenteRivalSubmit();
+                    }
+                  }}
                   className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none"
                 />
               </div>
@@ -1627,18 +1651,19 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                   Cancelar
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleAgregarSuplenteRivalSubmit}
                   style={{ backgroundColor: colorRivalConfig, color: getContrastingTextColor(colorRivalConfig) }}
                   className="px-4 py-1.5 font-bold rounded-lg cursor-pointer transition-opacity hover:opacity-90 shadow-md"
                 >
                   Agregar Suplente
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
 
-    </form>
+    </div>
   );
 };

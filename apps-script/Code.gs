@@ -449,7 +449,7 @@ function doPost(e) {
       return jsonResponse_({ ok: true, data: 'Partido y registros asociados eliminados' });
     }
 
-    // Endpoint: GUARDAR CONFIGURACIÓN DEL CLUB (Nombre y colores)
+    // Endpoint: GUARDAR CONFIGURACIÓN DEL CLUB (Nombre, colores y 11 inicial base)
     if (action === 'guardarConfiguracion' || action === 'guardarClubConfig') {
       const conf = body.config || body.clubConfig || {};
       const sheetConf = getOrCreateSheet_(ss, 'Config', ['clave', 'valor']);
@@ -458,6 +458,9 @@ function doPost(e) {
         'nombre_equipo': conf.nombre || 'Los Halcones FC',
         'color_propio': conf.colorPropio || '#3ddc84',
         'color_rival': conf.colorRival || '#e63946',
+        'formacion_predeterminada': conf.formacionPredeterminada || '',
+        'titulares_predeterminados': JSON.stringify(conf.titularesPredeterminados || []),
+        'slots_predeterminados': JSON.stringify(conf.slotsPredeterminados || []),
         'ultima_actualizacion': new Date().toISOString()
       };
 
@@ -680,6 +683,9 @@ function doPost(e) {
           'nombre_equipo': conf.nombre || 'Los Halcones FC',
           'color_propio': conf.colorPropio || '#3ddc84',
           'color_rival': conf.colorRival || '#e63946',
+          'formacion_predeterminada': conf.formacionPredeterminada || '',
+          'titulares_predeterminados': JSON.stringify(conf.titularesPredeterminados || []),
+          'slots_predeterminados': JSON.stringify(conf.slotsPredeterminados || []),
           'ultima_actualizacion': new Date().toISOString()
         };
         Object.keys(configMap).forEach(function(clave) {
@@ -724,11 +730,24 @@ function doPost(e) {
         rowsConf.forEach(function(r) {
           if (r.clave) mapConf[r.clave] = r.valor;
         });
-        if (mapConf['nombre_equipo']) {
+        if (mapConf['nombre_equipo'] || mapConf['formacion_predeterminada'] || mapConf['titulares_predeterminados']) {
+          let titularesPred = [];
+          try {
+            titularesPred = mapConf['titulares_predeterminados'] ? JSON.parse(mapConf['titulares_predeterminados']) : [];
+          } catch(e) {}
+
+          let slotsPred = [];
+          try {
+            slotsPred = mapConf['slots_predeterminados'] ? JSON.parse(mapConf['slots_predeterminados']) : [];
+          } catch(e) {}
+
           configObj = {
-            nombre: mapConf['nombre_equipo'],
+            nombre: mapConf['nombre_equipo'] || 'Los Halcones FC',
             colorPropio: mapConf['color_propio'] || '#3ddc84',
-            colorRival: mapConf['color_rival'] || '#e63946'
+            colorRival: mapConf['color_rival'] || '#e63946',
+            formacionPredeterminada: mapConf['formacion_predeterminada'] || undefined,
+            titularesPredeterminados: Array.isArray(titularesPred) && titularesPred.length > 0 ? titularesPred : undefined,
+            slotsPredeterminados: Array.isArray(slotsPred) && slotsPred.length > 0 ? slotsPred : undefined
           };
         }
       }

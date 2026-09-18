@@ -377,7 +377,11 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
             {onAgregarSuplenteClick && (
               <button
                 type="button"
-                onClick={onAgregarSuplenteClick}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onAgregarSuplenteClick();
+                }}
                 style={colorHex ? { borderColor: `${colorHex}66`, color: colorHex } : undefined}
                 className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-[#3ddc84] hover:text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm"
               >

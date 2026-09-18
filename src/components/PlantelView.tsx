@@ -216,7 +216,8 @@ export const PlantelView: React.FC<PlantelViewProps> = ({
     const titularesFinales = canchaSlotsBase.filter((id): id is string => Boolean(id));
     const updated = StorageService.saveClubConfig({
       formacionPredeterminada,
-      titularesPredeterminados: titularesFinales
+      titularesPredeterminados: titularesFinales,
+      slotsPredeterminados: canchaSlotsBase
     });
     // Sincronizar remotamente con Google Sheets si está conectado
     await ApiService.guardarClubConfig(updated).catch(() => {});

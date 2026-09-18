@@ -763,7 +763,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                           <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
                             <div>
                               <span className="text-xs text-[#9aa89f] block">
-                                {h.fecha} • {h.condicion === 'local' ? 'Local' : h.condicion === 'neutral' ? 'Cancha Neutral' : 'Visitante'}
+                                {h.fecha} • {h.condicion === 'local' ? 'Local' : h.condicion === 'neutral' ? 'NEUTRAL' : 'Visitante'}
                               </span>
                               <div className="font-display font-bold text-sm text-white">
                                 vs {h.rival}

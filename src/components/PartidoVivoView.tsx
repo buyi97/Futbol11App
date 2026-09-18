@@ -591,7 +591,10 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     !expulsadosRivalesIds.has(String(r.numero)) && !expulsadosRivalesIds.has(r.id)
   );
 
-  const jugadoresCanchaRival: JugadorEnCancha[] = rivalesActivos.map((r, idx) => {
+  const rivalesTitulares = rivalesActivos.filter(r => r.titular !== false);
+  const rivalesSuplentes = rivalesActivos.filter(r => r.titular === false);
+
+  const jugadoresCanchaRival: JugadorEnCancha[] = rivalesTitulares.map((r, idx) => {
     const coords = presetR[idx % presetR.length] || { pos: 'RIV', x: 50, y: 50 };
     return {
       id: String(r.numero),
@@ -600,9 +603,21 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
       posicion: coords.pos || r.posicion_tactica || 'RIV',
       x: coords.x,
       y: coords.y,
-      esRival: true
+      esRival: true,
+      titular: true
     };
   });
+
+  const suplentesCanchaRival: JugadorEnCancha[] = rivalesSuplentes.map(r => ({
+    id: String(r.numero),
+    nombre: r.nombre ? r.nombre : `Rival #${r.numero}`,
+    numero: r.numero,
+    posicion: r.posicion_tactica || 'SUPL',
+    x: 0,
+    y: 0,
+    esRival: true,
+    titular: false
+  }));
 
   return (
     <div className="space-y-4 pb-20 max-w-4xl mx-auto">
@@ -971,7 +986,10 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                   <div className="flex items-center gap-3">
                     {/* Minuto del evento */}
                     <div className="w-16 text-center shrink-0">
-                      <span className="font-display font-bold text-sm text-[#3ddc84]">
+                      <span 
+                        className="font-display font-bold text-sm"
+                        style={{ color: esPropio ? colorClub : colorRivalConfig }}
+                      >
                         {minutoTxt}
                       </span>
                       <span className="text-[10px] text-[#9aa89f] block -mt-1">
@@ -990,7 +1008,12 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       {inc.tipo === 'tiro' && '💨'}
                       {inc.tipo === 'tiro_arco' && '🎯'}
                       {inc.tipo === 'corner' && '🚩'}
-                      {inc.tipo === 'cambio' && <ArrowRightLeft className="w-4 h-4 text-[#3ddc84]" />}
+                      {inc.tipo === 'cambio' && (
+                        <ArrowRightLeft 
+                          className="w-4 h-4" 
+                          style={{ color: esPropio ? colorClub : colorRivalConfig }} 
+                        />
+                      )}
                     </div>
 
                     {/* Detalle descriptivo */}
@@ -1013,7 +1036,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       <p className="text-xs text-[#9aa89f] mt-0.5">
                         {inc.tipo === 'cambio' ? (
                           <>
-                            Sale: <strong className="text-white">#{convocadoObj?.numero || jugadorObj?.numero} {jugadorObj?.nombre || 'Jugador'}</strong> ➔ Entra: <strong className="text-[#3ddc84]">#{convocadoSecObj?.numero || jugadorSecObj?.numero} {jugadorSecObj?.nombre || 'Jugador'}</strong>
+                            Sale: <strong className="text-white">#{convocadoObj?.numero || jugadorObj?.numero} {jugadorObj?.nombre || 'Jugador'}</strong> ➔ Entra: <strong style={{ color: colorClub }}>#{convocadoSecObj?.numero || jugadorSecObj?.numero} {jugadorSecObj?.nombre || 'Jugador'}</strong>
                           </>
                         ) : inc.tipo === 'corner' ? (
                           <>Córner para {esPropio ? nombreClub : draft.partido.rival}</>
@@ -1021,7 +1044,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                           <>
                             #{convocadoObj?.numero || jugadorObj?.numero} {jugadorObj?.nombre || 'Jugador'}
                             {asistObj && (
-                              <span className="text-[#3ddc84] ml-1">
+                              <span className="ml-1" style={{ color: colorClub }}>
                                 (Asistencia: #{convocadoAsist?.numero || asistObj.numero} {asistObj.nombre})
                               </span>
                             )}
@@ -1203,8 +1226,13 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                     type="button"
                     onClick={() => setVistaCancha(true)}
                     className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                      vistaCancha ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-[#3ddc84]' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
+                      vistaCancha ? '' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
                     }`}
+                    style={vistaCancha ? {
+                      backgroundColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}26`,
+                      borderColor: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig,
+                      color: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig
+                    } : undefined}
                   >
                     ⚽ Formación
                   </button>
@@ -1212,14 +1240,26 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                     type="button"
                     onClick={() => setVistaCancha(false)}
                     className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                      !vistaCancha ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-[#3ddc84]' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
+                      !vistaCancha ? '' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
                     }`}
+                    style={!vistaCancha ? {
+                      backgroundColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}26`,
+                      borderColor: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig,
+                      color: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig
+                    } : undefined}
                   >
                     📋 Lista
                   </button>
                 </div>
               ) : (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#3ddc84]/20 text-[#3ddc84] border border-[#3ddc84]/30">
+                <span 
+                  className="text-[10px] font-bold px-2 py-0.5 rounded border"
+                  style={{
+                    backgroundColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}26`,
+                    borderColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}40`,
+                    color: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig
+                  }}
+                >
                   {tipoSeleccionado === 'cambio' ? '📋 Selección de Suplente: Formato Lista' : 'Modo Lista Exclusivo'}
                 </span>
               )}
@@ -1247,7 +1287,14 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       <div className="flex items-center justify-between bg-[#132319] border border-[#243d2c] rounded-xl px-2.5 py-1.5 mb-2 gap-2 flex-wrap">
                         <div className="flex items-center gap-1.5">
                           <span className="text-[11px] font-semibold text-zinc-300">Táctica:</span>
-                          <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-[#3ddc84]/20 border border-[#3ddc84]/40 text-[#3ddc84]">
+                          <span 
+                            className="text-xs font-bold font-mono px-2 py-0.5 rounded border"
+                            style={{
+                              backgroundColor: `${colorClub}26`,
+                              borderColor: `${colorClub}50`,
+                              color: colorClub
+                            }}
+                          >
                             {formacionPropiaActual}
                           </span>
                         </div>
@@ -1259,9 +1306,13 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                               onClick={() => handleCambiarEsquemaEnVivo(esq)}
                               className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition-all cursor-pointer ${
                                 formacionPropiaActual === esq
-                                  ? 'bg-[#3ddc84] text-[#0f1712] border-[#3ddc84]'
+                                  ? 'border-transparent'
                                   : 'bg-[#0f1712] text-zinc-400 border-[#243d2c] hover:text-white'
                               }`}
+                              style={formacionPropiaActual === esq ? {
+                                backgroundColor: colorClub,
+                                color: getContrastingTextColor(colorClub)
+                              } : undefined}
                               title={`Cambiar a ${esq}`}
                             >
                               {esq}
@@ -1271,7 +1322,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       </div>
 
                       <TacticaCancha
-                        titulo={`Halcones FC (${formacionPropiaActual})`}
+                        titulo={`${nombreClub} (${formacionPropiaActual})`}
                         jugadores={
                           pasoAsistencia
                             ? jugadoresCanchaPropia.filter(j => j.id !== goleadorId)
@@ -1279,7 +1330,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                         }
                         suplentes={suplentesCanchaPropia}
                         mostrarSuplentes={tipoSeleccionado !== 'cambio'}
-                        colorEquipo="verde"
+                        colorHex={colorClub}
                         modoInteractivo={true}
                         editableDorsales={true}
                       onEditarNumero={(id, num) => handleActualizarDorsalPropio(id, num)}
@@ -1335,7 +1386,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                     <TacticaCancha
                       titulo={`Rival: ${draft.partido.rival} (${formacionRivalActual})`}
                       jugadores={jugadoresCanchaRival}
-                      colorEquipo="amarillo"
+                      suplentes={suplentesCanchaRival}
+                      colorHex={colorRivalConfig}
                       modoInteractivo={true}
                       editableDorsales={true}
                       onEditarNumero={(id, num) => handleActualizarRival(id, num)}

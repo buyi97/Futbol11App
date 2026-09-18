@@ -28,6 +28,9 @@ import {
   Check,
   X,
   Calculator,
+  Copy,
+  DollarSign,
+  Coins,
   Tag,
   AlertTriangle,
   Shirt,
@@ -37,6 +40,17 @@ import { Partido, Jugador, Convocado, RivalJugador, Incidencia, RolUsuario, Tipo
 import { calcularMinutosPartido, getPosicionBadge } from '../utils/footballCalculations';
 import { StorageService } from '../services/storage';
 import { ApiService } from '../services/api';
+
+function getContrastingTextColor(hexColor?: string): string {
+  if (!hexColor) return '#ffffff';
+  let hex = hexColor.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  const r = parseInt(hex.substring(0, 2), 16) || 0;
+  const g = parseInt(hex.substring(2, 4), 16) || 0;
+  const b = parseInt(hex.substring(4, 6), 16) || 0;
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 135 ? '#0f1712' : '#ffffff';
+}
 
 interface PartidoDetalleViewProps {
   partido: Partido;
@@ -139,6 +153,15 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
 
   // Modal de confirmación para eliminar incidencia
   const [incidenciaAEliminar, setIncidenciaAEliminar] = useState<Incidencia | null>(null);
+
+  // Modal para Calcular Costo del Partido
+  const [modalCalcularCosto, setModalCalcularCosto] = useState(false);
+  const [costoTotalInput, setCostoTotalInput] = useState<string>('');
+  const [modoCalculoCosto, setModoCalculoCosto] = useState<'proporcional' | 'partes_iguales'>('proporcional');
+  const [redondearCosto, setRedondearCosto] = useState<boolean>(true);
+  const [jugadoresExcluidosCosto, setJugadoresExcluidosCosto] = useState<Set<string>>(new Set());
+  const [jugadoresPagaronCosto, setJugadoresPagaronCosto] = useState<Set<string>>(new Set());
+  const [copiadoWhatsApp, setCopiadoWhatsApp] = useState(false);
 
   // Sincronizar estado cuando cambian las props
   useEffect(() => {
@@ -312,8 +335,8 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
     ? `${partidoEditado.rival} (Visitante)` 
     : `${nombreClub} (Visitante)`;
 
-  const colorColumnaLocal = (esNeutral || esLocalPropio) ? colorClub : '#ffb703';
-  const colorColumnaVisitante = (esNeutral || esLocalPropio) ? '#ffb703' : colorClub;
+  const colorColumnaLocal = (esNeutral || esLocalPropio) ? colorClub : colorRivalElegido;
+  const colorColumnaVisitante = (esNeutral || esLocalPropio) ? colorRivalElegido : colorClub;
 
   const incidenciasLocal = incidenciasPrincipales.filter(i => {
     return (esNeutral || esLocalPropio) ? i.equipo === 'propio' : i.equipo === 'rival';
@@ -886,7 +909,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
               className="text-xs font-bold uppercase tracking-wider block mb-1"
               style={{ color: colorClub }}
             >
-              {nombreClub} ({partidoEditado.condicion})
+              Equipo propio
             </span>
             <h2 className="font-display font-bold text-2xl sm:text-3xl text-white">
               {nombreClub}
@@ -1025,11 +1048,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                       {/* Tarjeta del evento alineada al lado correspondiente */}
                       <div className={`flex-1 ${esPropio ? 'text-left' : 'text-right'}`}>
                         <div
-                          className={`inline-flex items-center gap-2 py-1.5 px-3 rounded-xl border transition-all ${
-                            esPropio
-                              ? 'bg-[#0f1712]/90 border-[#243d2c] hover:border-[#3ddc84]/60'
-                              : 'bg-[#0f1712]/90 border-[#243d2c] hover:border-[#ffb703]/60'
-                          }`}
+                          className="inline-flex items-center gap-2 py-1.5 px-3 rounded-xl border transition-all bg-[#0f1712]/90 border-[#243d2c]"
                           style={{
                             borderLeftWidth: esPropio ? '3px' : undefined,
                             borderLeftColor: esPropio ? colorClub : undefined,
@@ -1118,18 +1137,24 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
           {/* Tiros al arco */}
           <div>
             <div className="flex justify-between text-xs font-semibold text-white mb-1">
-              <span className="text-[#3ddc84]">{tirosAlArcoPropios}</span>
+              <span style={{ color: colorClub }}>{tirosAlArcoPropios}</span>
               <span className="text-[#9aa89f]">Tiros al arco</span>
-              <span className="text-[#ffb703]">{tirosAlArcoRival}</span>
+              <span style={{ color: colorRivalElegido }}>{tirosAlArcoRival}</span>
             </div>
             <div className="h-2 rounded-full bg-[#0f1712] overflow-hidden flex">
               <div 
-                className="bg-[#3ddc84] h-full transition-all" 
-                style={{ width: `${tirosAlArcoPropios + tirosAlArcoRival > 0 ? (tirosAlArcoPropios / (tirosAlArcoPropios + tirosAlArcoRival)) * 100 : 50}%` }} 
+                className="h-full transition-all" 
+                style={{ 
+                  backgroundColor: colorClub,
+                  width: `${tirosAlArcoPropios + tirosAlArcoRival > 0 ? (tirosAlArcoPropios / (tirosAlArcoPropios + tirosAlArcoRival)) * 100 : 50}%` 
+                }} 
               />
               <div 
-                className="bg-[#ffb703] h-full transition-all" 
-                style={{ width: `${tirosAlArcoPropios + tirosAlArcoRival > 0 ? (tirosAlArcoRival / (tirosAlArcoPropios + tirosAlArcoRival)) * 100 : 50}%` }} 
+                className="h-full transition-all" 
+                style={{ 
+                  backgroundColor: colorRivalElegido,
+                  width: `${tirosAlArcoPropios + tirosAlArcoRival > 0 ? (tirosAlArcoRival / (tirosAlArcoPropios + tirosAlArcoRival)) * 100 : 50}%` 
+                }} 
               />
             </div>
           </div>
@@ -1137,18 +1162,24 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
           {/* Tiros Totales */}
           <div>
             <div className="flex justify-between text-xs font-semibold text-white mb-1">
-              <span className="text-[#3ddc84]">{tirosTotalesPropios}</span>
+              <span style={{ color: colorClub }}>{tirosTotalesPropios}</span>
               <span className="text-[#9aa89f]">Tiros Totales</span>
-              <span className="text-[#ffb703]">{tirosTotalesRival}</span>
+              <span style={{ color: colorRivalElegido }}>{tirosTotalesRival}</span>
             </div>
             <div className="h-2 rounded-full bg-[#0f1712] overflow-hidden flex">
               <div 
-                className="bg-[#3ddc84] h-full transition-all" 
-                style={{ width: `${tirosTotalesPropios + tirosTotalesRival > 0 ? (tirosTotalesPropios / (tirosTotalesPropios + tirosTotalesRival)) * 100 : 50}%` }} 
+                className="h-full transition-all" 
+                style={{ 
+                  backgroundColor: colorClub,
+                  width: `${tirosTotalesPropios + tirosTotalesRival > 0 ? (tirosTotalesPropios / (tirosTotalesPropios + tirosTotalesRival)) * 100 : 50}%` 
+                }} 
               />
               <div 
-                className="bg-[#ffb703] h-full transition-all" 
-                style={{ width: `${tirosTotalesPropios + tirosTotalesRival > 0 ? (tirosTotalesRival / (tirosTotalesPropios + tirosTotalesRival)) * 100 : 50}%` }} 
+                className="h-full transition-all" 
+                style={{ 
+                  backgroundColor: colorRivalElegido,
+                  width: `${tirosTotalesPropios + tirosTotalesRival > 0 ? (tirosTotalesRival / (tirosTotalesPropios + tirosTotalesRival)) * 100 : 50}%` 
+                }} 
               />
             </div>
           </div>
@@ -1156,18 +1187,24 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
           {/* Corners */}
           <div>
             <div className="flex justify-between text-xs font-semibold text-white mb-1">
-              <span className="text-[#3ddc84]">{cornersPropios}</span>
+              <span style={{ color: colorClub }}>{cornersPropios}</span>
               <span className="text-[#9aa89f]">Corners</span>
-              <span className="text-[#ffb703]">{cornersRival}</span>
+              <span style={{ color: colorRivalElegido }}>{cornersRival}</span>
             </div>
             <div className="h-2 rounded-full bg-[#0f1712] overflow-hidden flex">
               <div 
-                className="bg-[#3ddc84] h-full transition-all" 
-                style={{ width: `${cornersPropios + cornersRival > 0 ? (cornersPropios / (cornersPropios + cornersRival)) * 100 : 50}%` }} 
+                className="h-full transition-all" 
+                style={{ 
+                  backgroundColor: colorClub,
+                  width: `${cornersPropios + cornersRival > 0 ? (cornersPropios / (cornersPropios + cornersRival)) * 100 : 50}%` 
+                }} 
               />
               <div 
-                className="bg-[#ffb703] h-full transition-all" 
-                style={{ width: `${cornersPropios + cornersRival > 0 ? (cornersRival / (cornersPropios + cornersRival)) * 100 : 50}%` }} 
+                className="h-full transition-all" 
+                style={{ 
+                  backgroundColor: colorRivalElegido,
+                  width: `${cornersPropios + cornersRival > 0 ? (cornersRival / (cornersPropios + cornersRival)) * 100 : 50}%` 
+                }} 
               />
             </div>
           </div>
@@ -1175,18 +1212,24 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
           {/* Faltas */}
           <div>
             <div className="flex justify-between text-xs font-semibold text-white mb-1">
-              <span className="text-[#3ddc84]">{faltasPropias}</span>
+              <span style={{ color: colorClub }}>{faltasPropias}</span>
               <span className="text-[#9aa89f]">Faltas</span>
-              <span className="text-[#ffb703]">{faltasRival}</span>
+              <span style={{ color: colorRivalElegido }}>{faltasRival}</span>
             </div>
             <div className="h-2 rounded-full bg-[#0f1712] overflow-hidden flex">
               <div 
-                className="bg-[#3ddc84] h-full transition-all" 
-                style={{ width: `${faltasPropias + faltasRival > 0 ? (faltasPropias / (faltasPropias + faltasRival)) * 100 : 50}%` }} 
+                className="h-full transition-all" 
+                style={{ 
+                  backgroundColor: colorClub,
+                  width: `${faltasPropias + faltasRival > 0 ? (faltasPropias / (faltasPropias + faltasRival)) * 100 : 50}%` 
+                }} 
               />
               <div 
-                className="bg-[#ffb703] h-full transition-all" 
-                style={{ width: `${faltasPropias + faltasRival > 0 ? (faltasRival / (faltasPropias + faltasRival)) * 100 : 50}%` }} 
+                className="h-full transition-all" 
+                style={{ 
+                  backgroundColor: colorRivalElegido,
+                  width: `${faltasPropias + faltasRival > 0 ? (faltasRival / (faltasPropias + faltasRival)) * 100 : 50}%` 
+                }} 
               />
             </div>
           </div>
@@ -1407,6 +1450,23 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* Botón para Calcular Costo del Partido (Solo Editor/DT) */}
+          {esEditor && (
+            <div className="mt-4 pt-3.5 border-t border-[#243d2c] flex items-center justify-between flex-wrap gap-3">
+              <div className="text-xs text-[#9aa89f]">
+                Repartí los gastos del partido (cancha, árbitro, etc.) proporcionalmente a los minutos jugados.
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalCalcularCosto(true)}
+                className="px-3.5 py-2 bg-[#3ddc84]/15 hover:bg-[#3ddc84]/25 border border-[#3ddc84]/40 hover:border-[#3ddc84] text-[#3ddc84] rounded-xl text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-all shadow-sm"
+              >
+                <Calculator className="w-4 h-4" />
+                <span>Calcular costo</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Línea de Tiempo del Partido (1 columna) */}
@@ -1449,7 +1509,10 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                     className="p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] flex items-start gap-2.5 group hover:border-[#243d2c]/90 transition-all"
                   >
                     <div className="w-10 text-center shrink-0">
-                      <span className="font-display font-bold text-sm text-[#3ddc84]">
+                      <span 
+                        className="font-display font-bold text-sm"
+                        style={{ color: esPropio ? colorClub : colorRivalElegido }}
+                      >
                         {inc.minuto}'
                       </span>
                       <span className="text-[10px] text-[#9aa89f] block -mt-1">
@@ -1474,10 +1537,11 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                         <span className="text-xs font-bold text-white uppercase">
                           {inc.tipo === 'cambio' ? 'Cambio' : inc.tipo === 'tiro_arco' ? 'Tiro al Arco' : inc.tipo.replace('_', ' ')}
                         </span>
-                        <span className={`text-[9px] font-semibold px-1 rounded ${
-                          esPropio ? 'text-[#3ddc84]' : 'text-[#ffb703]'
-                        }`}>
-                          {esPropio ? nombreClub : 'Rival'}
+                        <span 
+                          className="text-[9px] font-semibold px-1 rounded"
+                          style={{ color: esPropio ? colorClub : colorRivalElegido }}
+                        >
+                          {esPropio ? nombreClub : (partidoEditado.rival || 'Rival')}
                         </span>
                       </div>
 
@@ -1493,12 +1557,12 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                           <>
                             #{convocadoObj?.numero || jug?.numero} {jug?.nombre || 'Jugador del plantel'}
                             {asistObj && (
-                              <span className="text-[#3ddc84] ml-1">
+                              <span className="ml-1" style={{ color: colorClub }}>
                                 (Asistencia: #{convocadoAsist?.numero || asistObj.numero} {asistObj.nombre})
                               </span>
                             )}
                             {jugSec && !asistObj && (
-                              <span className="text-[#3ddc84] ml-1">
+                              <span className="ml-1" style={{ color: colorClub }}>
                                 (Asistencia: #{convocadoSecObj?.numero || jugSec.numero} {jugSec.nombre})
                               </span>
                             )}
@@ -1778,8 +1842,8 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                 <span className="text-[#3ddc84]">Minuto {incidenciaAEliminar.minuto_display || `${incidenciaAEliminar.minuto}'`}</span>
               </div>
               <p className="text-[#9aa89f]">
-                Equipo: <strong className={incidenciaAEliminar.equipo === 'propio' ? 'text-[#3ddc84]' : 'text-[#ffb703]'}>
-                  {incidenciaAEliminar.equipo === 'propio' ? nombreClub : 'Rival'}
+                Equipo: <strong style={{ color: incidenciaAEliminar.equipo === 'propio' ? colorClub : colorRivalElegido }}>
+                  {incidenciaAEliminar.equipo === 'propio' ? nombreClub : (partidoEditado.rival || 'Rival')}
                 </strong>
               </p>
               {incidenciaAEliminar.tipo === 'gol' && (
@@ -2173,9 +2237,13 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
               <button
                 type="button"
                 onClick={() => setTabAlineaciones('rival')}
+                style={tabAlineaciones === 'rival' ? {
+                  backgroundColor: colorRivalElegido,
+                  color: getContrastingTextColor(colorRivalElegido)
+                } : undefined}
                 className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
                   tabAlineaciones === 'rival'
-                    ? 'bg-[#ffb703] text-[#0f1712] shadow'
+                    ? 'shadow'
                     : 'text-[#9aa89f] hover:text-white'
                 }`}
               >
@@ -2440,6 +2508,332 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL: Calcular Costo del Partido */}
+      {modalCalcularCosto && (() => {
+        const costoTotalNumerico = Math.max(0, parseFloat(costoTotalInput) || 0);
+
+        const jugadoresCostoCalculados = detallesMinutos.map(item => {
+          const conv = convocadosMap.get(item.jugador.id);
+          const dorsalMostrar = conv?.numero !== undefined && conv?.numero !== null ? conv.numero : item.jugador.numero;
+          const estaExcluido = jugadoresExcluidosCosto.has(item.jugador.id);
+          const yaPago = jugadoresPagaronCosto.has(item.jugador.id);
+          const minutos = item.minutosJugados || 0;
+          return {
+            ...item,
+            dorsalMostrar,
+            estaExcluido,
+            yaPago,
+            minutos,
+          };
+        });
+
+        const jugadoresParticipantes = jugadoresCostoCalculados.filter(j => !j.estaExcluido);
+        const totalMinutosParticipantes = jugadoresParticipantes.reduce((sum, j) => sum + j.minutos, 0);
+        const cantidadConMinutos = jugadoresParticipantes.filter(j => j.minutos > 0).length || 1;
+
+        const jugadoresConCuota = jugadoresCostoCalculados.map(j => {
+          let cuotaExacta = 0;
+          if (!j.estaExcluido && costoTotalNumerico > 0) {
+            if (modoCalculoCosto === 'proporcional') {
+              cuotaExacta = totalMinutosParticipantes > 0 ? (j.minutos / totalMinutosParticipantes) * costoTotalNumerico : 0;
+            } else {
+              cuotaExacta = j.minutos > 0 ? costoTotalNumerico / cantidadConMinutos : 0;
+            }
+          }
+          const cuotaFinal = redondearCosto ? Math.round(cuotaExacta / 50) * 50 : Math.round(cuotaExacta);
+          const porcentaje = totalMinutosParticipantes > 0 && !j.estaExcluido ? ((j.minutos / totalMinutosParticipantes) * 100).toFixed(1) : '0';
+          return {
+            ...j,
+            cuotaExacta,
+            cuotaFinal,
+            porcentaje
+          };
+        });
+
+        const totalRecaudado = jugadoresConCuota
+          .filter(j => !j.estaExcluido && j.yaPago)
+          .reduce((sum, j) => sum + j.cuotaFinal, 0);
+
+        const totalPendiente = Math.max(0, costoTotalNumerico - totalRecaudado);
+
+        const handleToggleExcluir = (id: string) => {
+          setJugadoresExcluidosCosto(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          });
+        };
+
+        const handleTogglePago = (id: string) => {
+          setJugadoresPagaronCosto(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          });
+        };
+
+        const handleCopiarWhatsApp = () => {
+          const lineas = [
+            `⚽ *REPARTO DE COSTOS - ${nombreClub} vs ${partidoEditado.rival}*`,
+            `📅 Fecha: ${partidoEditado.fecha}`,
+            `💰 *Costo Total:* $${costoTotalNumerico.toLocaleString('es-AR')}`,
+            `📊 *Criterio:* ${modoCalculoCosto === 'proporcional' ? 'Proporcional a minutos jugados (con descuentos por cambios y expulsiones)' : 'Partes iguales entre los que jugaron'}`,
+            '',
+            `📋 *DETALLE POR JUGADOR:*`,
+            ...jugadoresConCuota
+              .filter(j => !j.estaExcluido && j.cuotaFinal > 0)
+              .map(j => `• #${j.dorsalMostrar} ${j.jugador.nombre}: *$${j.cuotaFinal.toLocaleString('es-AR')}* (${j.minutos}' jugados${j.fueExpulsado ? ' - 🟥 Exp.' : ''})${j.yaPago ? ' ✅ PAGADO' : ''}`),
+            ''
+          ];
+
+          if (totalRecaudado > 0) {
+            lineas.push(`💳 *Recaudado:* $${totalRecaudado.toLocaleString('es-AR')} | *Pendiente:* $${totalPendiente.toLocaleString('es-AR')}`);
+          }
+
+          const texto = lineas.join('\n');
+          navigator.clipboard.writeText(texto).then(() => {
+            setCopiadoWhatsApp(true);
+            setTimeout(() => setCopiadoWhatsApp(false), 2500);
+          });
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl w-full max-w-2xl p-5 sm:p-6 shadow-2xl relative space-y-4 max-h-[90vh] flex flex-col">
+              
+              {/* Encabezado */}
+              <div className="flex items-center justify-between pb-3 border-b border-[#243d2c]">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-[#3ddc84]/15 text-[#3ddc84]">
+                    <Calculator className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-display font-bold text-lg text-white">
+                      Calcular Costo del Partido
+                    </h3>
+                    <p className="text-xs text-[#9aa89f]">
+                      {nombreClub} vs {partidoEditado.rival} • {partidoEditado.fecha}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalCalcularCosto(false)}
+                  className="p-1.5 rounded-lg text-[#9aa89f] hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Panel de Entradas de Configuración */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#0f1712] p-3.5 rounded-xl border border-[#243d2c]">
+                <div>
+                  <label className="block text-xs font-semibold text-[#9aa89f] mb-1">
+                    Costo Total del Partido ($)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-[#3ddc84]">
+                      $
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={costoTotalInput}
+                      onChange={(e) => setCostoTotalInput(e.target.value)}
+                      placeholder="Ej: 50000"
+                      className="w-full bg-[#182a1f] border border-[#243d2c] rounded-xl pl-7 pr-3 py-2 text-white font-display font-bold text-sm focus:outline-none focus:border-[#3ddc84]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#9aa89f] mb-1">
+                    Método de División
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#182a1f] border border-[#243d2c] rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setModoCalculoCosto('proporcional')}
+                      className={`py-1.5 px-2 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                        modoCalculoCosto === 'proporcional'
+                          ? 'bg-[#3ddc84] text-[#0f1712] shadow'
+                          : 'text-[#9aa89f] hover:text-white'
+                      }`}
+                    >
+                      Por minutos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModoCalculoCosto('partes_iguales')}
+                      className={`py-1.5 px-2 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                        modoCalculoCosto === 'partes_iguales'
+                          ? 'bg-[#3ddc84] text-[#0f1712] shadow'
+                          : 'text-[#9aa89f] hover:text-white'
+                      }`}
+                    >
+                      Partes iguales
+                    </button>
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2 flex items-center justify-between pt-1 text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer text-zinc-300">
+                    <input
+                      type="checkbox"
+                      checked={redondearCosto}
+                      onChange={(e) => setRedondearCosto(e.target.checked)}
+                      className="rounded border-[#243d2c] text-[#3ddc84] focus:ring-0 cursor-pointer"
+                    />
+                    <span>Redondear cuotas a múltiplos de $50</span>
+                  </label>
+                  <span className="text-[11px] text-[#9aa89f]">
+                    {totalMinutosParticipantes}' minutos totales entre {jugadoresParticipantes.filter(j => j.minutos > 0).length} jugadores
+                  </span>
+                </div>
+              </div>
+
+              {/* Métricas rápidas de cobro */}
+              {costoTotalNumerico > 0 && (
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="p-2 bg-[#0f1712] border border-[#243d2c] rounded-xl">
+                    <span className="text-[10px] text-[#9aa89f] block">Total a Cubrir</span>
+                    <span className="font-display font-bold text-sm text-white">
+                      ${costoTotalNumerico.toLocaleString('es-AR')}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-[#0f1712] border border-[#243d2c] rounded-xl">
+                    <span className="text-[10px] text-[#3ddc84] block">Cobrado</span>
+                    <span className="font-display font-bold text-sm text-[#3ddc84]">
+                      ${totalRecaudado.toLocaleString('es-AR')}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-[#0f1712] border border-[#243d2c] rounded-xl">
+                    <span className="text-[10px] text-amber-400 block">Pendiente</span>
+                    <span className="font-display font-bold text-sm text-amber-400">
+                      ${totalPendiente.toLocaleString('es-AR')}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Lista scrolleable de jugadores */}
+              <div className="flex-1 overflow-y-auto pr-1 min-h-0 border border-[#243d2c] rounded-xl bg-[#0f1712]">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#182a1f] sticky top-0 z-10 border-b border-[#243d2c] text-[10px] text-[#9aa89f] uppercase tracking-wider">
+                    <tr>
+                      <th className="py-2 px-2.5">Jugador</th>
+                      <th className="py-2 px-2 text-center">Minutos</th>
+                      <th className="py-2 px-2 text-center">% Part.</th>
+                      <th className="py-2 px-2 text-right">Cuota ($)</th>
+                      <th className="py-2 px-2 text-center">¿Pagó?</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#243d2c]/60">
+                    {jugadoresConCuota.map((j) => (
+                      <tr 
+                        key={j.jugador.id} 
+                        className={`hover:bg-[#182a1f]/60 transition-colors ${
+                          j.estaExcluido ? 'opacity-40 bg-black/20' : ''
+                        }`}
+                      >
+                        <td className="py-2 px-2.5">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleExcluir(j.jugador.id)}
+                              className="text-[10px] text-[#9aa89f] hover:text-white"
+                              title={j.estaExcluido ? 'Incluir en el cálculo' : 'Excluir del cálculo (no paga)'}
+                            >
+                              {j.estaExcluido ? '❌' : '✅'}
+                            </button>
+                            <span className="font-display font-bold text-xs text-[#3ddc84]">
+                              #{j.dorsalMostrar}
+                            </span>
+                            <div className="truncate">
+                              <span className="font-semibold text-white truncate block">
+                                {j.jugador.nombre}
+                              </span>
+                              {j.fueExpulsado && (
+                                <span className="text-[9px] text-[#e63946] font-semibold flex items-center gap-0.5">
+                                  🟥 Exp. {j.minutoSalida || j.minutoExpulsion}'
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-2 px-2 text-center text-zinc-300 font-semibold">
+                          {j.minutos}'
+                        </td>
+
+                        <td className="py-2 px-2 text-center text-[#9aa89f] text-[11px]">
+                          {!j.estaExcluido && j.minutos > 0 ? `${j.porcentaje}%` : '-'}
+                        </td>
+
+                        <td className="py-2 px-2 text-right">
+                          <span className="font-display font-bold text-xs sm:text-sm text-white">
+                            {costoTotalNumerico > 0 && !j.estaExcluido ? `$${j.cuotaFinal.toLocaleString('es-AR')}` : '$0'}
+                          </span>
+                        </td>
+
+                        <td className="py-2 px-2 text-center">
+                          <button
+                            type="button"
+                            disabled={j.estaExcluido || costoTotalNumerico === 0}
+                            onClick={() => handleTogglePago(j.jugador.id)}
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                              j.yaPago
+                                ? 'bg-[#3ddc84] text-[#0f1712]'
+                                : 'bg-[#182a1f] text-zinc-400 border border-[#243d2c] hover:text-white'
+                            }`}
+                          >
+                            {j.yaPago ? 'PAGADO' : 'PENDIENTE'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Botones de acción inferiores */}
+              <div className="flex items-center justify-between pt-3 border-t border-[#243d2c] gap-2 flex-wrap">
+                <button
+                  type="button"
+                  disabled={costoTotalNumerico === 0}
+                  onClick={handleCopiarWhatsApp}
+                  className="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-400 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {copiadoWhatsApp ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-300" />
+                      <span>¡Copiado para WhatsApp!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copiar para WhatsApp</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setModalCalcularCosto(false)}
+                  className="px-4 py-2 bg-transparent border border-[#243d2c] text-[#9aa89f] hover:text-white rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

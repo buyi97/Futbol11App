@@ -844,11 +844,14 @@ export const ApiService = {
           });
           StorageService.saveIncidencias(Array.from(mapI.values()).map(normalizarIncidencia));
         }
-        if (data.configuracion && typeof data.configuracion === 'object' && data.configuracion.nombre) {
+        if (data.configuracion && typeof data.configuracion === 'object') {
           StorageService.saveClubConfig({
-            nombre: data.configuracion.nombre,
+            nombre: data.configuracion.nombre || 'Los Halcones FC',
             colorPropio: data.configuracion.colorPropio || '#3ddc84',
-            colorRival: data.configuracion.colorRival || '#e63946'
+            colorRival: data.configuracion.colorRival || '#e63946',
+            formacionPredeterminada: data.configuracion.formacionPredeterminada,
+            titularesPredeterminados: data.configuracion.titularesPredeterminados,
+            slotsPredeterminados: data.configuracion.slotsPredeterminados
           });
         }
 
