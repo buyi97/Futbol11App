@@ -1073,30 +1073,49 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
               <span>{resultadoSincronizacion.message}</span>
             </div>
 
-            {resultadoSincronizacion.detalles && (
-              <div className="flex flex-wrap gap-2 pt-1 text-[11px] font-semibold text-white/90">
-                {resultadoSincronizacion.detalles.jugadores !== undefined && (
-                  <span className="bg-[#0f1712]/60 px-2 py-0.5 rounded-md border border-white/10">
-                    👥 {resultadoSincronizacion.detalles.jugadores} Jugadores
-                  </span>
-                )}
-                {resultadoSincronizacion.detalles.partidos !== undefined && (
-                  <span className="bg-[#0f1712]/60 px-2 py-0.5 rounded-md border border-white/10">
-                    🏆 {resultadoSincronizacion.detalles.partidos} Partidos
-                  </span>
-                )}
-                {resultadoSincronizacion.detalles.convocados !== undefined && (
-                  <span className="bg-[#0f1712]/60 px-2 py-0.5 rounded-md border border-white/10">
-                    📋 {resultadoSincronizacion.detalles.convocados} Convocados
-                  </span>
-                )}
-                {resultadoSincronizacion.detalles.incidencias !== undefined && (
-                  <span className="bg-[#0f1712]/60 px-2 py-0.5 rounded-md border border-white/10">
-                    ⚽ {resultadoSincronizacion.detalles.incidencias} Incidencias
-                  </span>
-                )}
-              </div>
-            )}
+            {resultadoSincronizacion.detalles && (() => {
+              const d = resultadoSincronizacion.detalles;
+              const countOf = (val: any) => {
+                if (typeof val === 'number') return val;
+                if (Array.isArray(val)) return val.length;
+                return undefined;
+              };
+              const numJugadores = countOf(d.jugadores) ?? countOf(d.plantel);
+              const numPartidos = countOf(d.partidos);
+              const numConvocados = countOf(d.convocados);
+              const numIncidencias = countOf(d.incidencias);
+              const numTorneos = countOf(d.torneos);
+
+              return (
+                <div className="flex flex-wrap gap-2 pt-1 text-[11px] font-semibold text-white/90">
+                  {numJugadores !== undefined && (
+                    <span className="bg-[#0f1712]/60 px-2 py-0.5 rounded-md border border-white/10">
+                      👥 {numJugadores} Jugadores
+                    </span>
+                  )}
+                  {numPartidos !== undefined && (
+                    <span className="bg-[#0f1712]/60 px-2 py-0.5 rounded-md border border-white/10">
+                      🏆 {numPartidos} Partidos
+                    </span>
+                  )}
+                  {numConvocados !== undefined && (
+                    <span className="bg-[#0f1712]/60 px-2 py-0.5 rounded-md border border-white/10">
+                      📋 {numConvocados} Convocados
+                    </span>
+                  )}
+                  {numIncidencias !== undefined && (
+                    <span className="bg-[#0f1712]/60 px-2 py-0.5 rounded-md border border-white/10">
+                      ⚽ {numIncidencias} Incidencias
+                    </span>
+                  )}
+                  {numTorneos !== undefined && (
+                    <span className="bg-[#0f1712]/60 px-2 py-0.5 rounded-md border border-white/10">
+                      🏅 {numTorneos} Torneos
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1510,7 +1529,7 @@ export const ConfiguracionView: React.FC<ConfiguracionViewProps> = ({
                   </span>
                 </div>
                 <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono">
-                  Reintentos: {item.reintentos}
+                  Reintentos: {item.intentos}
                 </span>
               </div>
             ))}

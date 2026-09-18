@@ -3,6 +3,7 @@ import React from 'react';
 interface SoccerBallLogoProps {
   className?: string;
   size?: number;
+  primaryColor?: string;
 }
 
 /**
@@ -11,7 +12,8 @@ interface SoccerBallLogoProps {
  */
 export const SoccerBallLogo: React.FC<SoccerBallLogoProps> = ({
   className = 'w-6 h-6',
-  size
+  size,
+  primaryColor
 }) => {
   return (
     <svg

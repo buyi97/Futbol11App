@@ -878,9 +878,9 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setModoRival('solo_numero')}
+                onClick={() => setModoRival('numero')}
                 className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
-                  modoRival === 'solo_numero'
+                  modoRival === 'numero'
                     ? 'bg-[#ffb703]/20 border-[#ffb703] text-[#ffb703]'
                     : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
                 }`}

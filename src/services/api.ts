@@ -808,6 +808,8 @@ export const ApiService = {
       if (res.ok && res.data && (Array.isArray(res.data.plantel) || Array.isArray(res.data.partidos))) {
         onProgreso?.('Actualizando almacenamiento local...', 80);
         const data = res.data;
+        let cantJugadores = 0;
+        let cantPartidos = 0;
 
         if (Array.isArray(data.plantel) && data.plantel.length > 0) {
           const mapJ = new Map<string, any>();
@@ -815,6 +817,7 @@ export const ApiService = {
             if (j && j.id && !mapJ.has(j.id)) mapJ.set(j.id, j);
           });
           const plantelNorm = Array.from(mapJ.values()).map(normalizarJugador);
+          cantJugadores = plantelNorm.length;
           StorageService.savePlantel(plantelNorm);
         }
         if (Array.isArray(data.partidos)) {
@@ -823,6 +826,7 @@ export const ApiService = {
             if (p && p.id && !mapP.has(p.id)) mapP.set(p.id, p);
           });
           const partidosNorm = Array.from(mapP.values()).map(normalizarPartido);
+          cantPartidos = partidosNorm.length;
           StorageService.savePartidos(partidosNorm);
 
           // Restaurar torneos si vienen en los partidos
@@ -833,7 +837,7 @@ export const ApiService = {
           data.torneos.forEach((t: any) => {
             if (t && t.id && !mapT.has(t.id)) mapT.set(t.id, t);
           });
-          StorageService.saveTorneos(Array.from(mapT.values()));
+          StorageService.saveTorneos(Array.from(mapT.values()).map(normalizarTorneo));
         }
         if (Array.isArray(data.convocados)) {
           const mapC = new Map<string, any>();
@@ -859,13 +863,22 @@ export const ApiService = {
           StorageService.saveIncidencias(Array.from(mapI.values()).map(normalizarIncidencia));
         }
         if (data.configuracion && typeof data.configuracion === 'object') {
+          let titulares = data.configuracion.titularesPredeterminados;
+          if (typeof titulares === 'string') {
+            try { titulares = JSON.parse(titulares); } catch {}
+          }
+          let slots = data.configuracion.slotsPredeterminados;
+          if (typeof slots === 'string') {
+            try { slots = JSON.parse(slots); } catch {}
+          }
+
           StorageService.saveClubConfig({
             nombre: data.configuracion.nombre || 'Los Halcones FC',
             colorPropio: data.configuracion.colorPropio || '#3ddc84',
             colorRival: data.configuracion.colorRival || '#e63946',
             formacionPredeterminada: data.configuracion.formacionPredeterminada,
-            titularesPredeterminados: data.configuracion.titularesPredeterminados,
-            slotsPredeterminados: data.configuracion.slotsPredeterminados
+            titularesPredeterminados: Array.isArray(titulares) ? titulares : undefined,
+            slotsPredeterminados: Array.isArray(slots) ? slots : undefined
           });
         }
 
@@ -878,10 +891,20 @@ export const ApiService = {
         }
 
         onProgreso?.('¡Datos descargados con éxito!', 100);
+
+        const statsConsolidadas = {
+          jugadores: cantJugadores,
+          partidos: cantPartidos,
+          convocados: Array.isArray(data.convocados) ? data.convocados.length : 0,
+          rivales: Array.isArray(data.rivales) ? data.rivales.length : 0,
+          incidencias: Array.isArray(data.incidencias) ? data.incidencias.length : 0,
+          torneos: Array.isArray(data.torneos) ? data.torneos.length : 0
+        };
+
         return {
           ok: true,
-          message: 'Datos descargados y sincronizados en tu dispositivo.',
-          datos: data
+          message: `¡Sincronización exitosa! Se descargaron ${statsConsolidadas.jugadores} jugadores, ${statsConsolidadas.partidos} partidos y ${statsConsolidadas.incidencias} incidencias.`,
+          datos: statsConsolidadas
         };
       }
     } catch (err) {
@@ -891,6 +914,7 @@ export const ApiService = {
     // 2. Fallback inteligente y resiliente: getTorneos + getPlantel + getHistorial + getPartido
     try {
       onProgreso?.('Descargando torneos...', 15);
+      let cantTorneos = 0;
       try {
         const resTorneos = await ApiService.request<any>('getTorneos');
         if (resTorneos.ok && Array.isArray(resTorneos.data)) {
@@ -899,7 +923,8 @@ export const ApiService = {
             if (t && t.id && !mapT.has(t.id)) mapT.set(t.id, t);
           });
           if (mapT.size > 0) {
-            StorageService.saveTorneos(Array.from(mapT.values()));
+            StorageService.saveTorneos(Array.from(mapT.values()).map(normalizarTorneo));
+            cantTorneos = mapT.size;
           }
         }
       } catch (e) {
@@ -999,16 +1024,20 @@ export const ApiService = {
       }
 
       onProgreso?.('¡Datos descargados con éxito!', 100);
+
+      const statsFallback = {
+        jugadores: plantelNormalizado.length,
+        partidos: partidosNormalizados.length,
+        convocados: convocadosNormalizados.length,
+        rivales: rivalesNormalizados.length,
+        incidencias: incidenciasNormalizadas.length,
+        torneos: cantTorneos
+      };
+
       return {
         ok: true,
-        message: `¡Sincronización exitosa! Se descargaron ${plantelNormalizado.length} jugadores, ${partidosNormalizados.length} partidos y ${incidenciasNormalizadas.length} incidencias.`,
-        datos: {
-          plantel: plantelNormalizado,
-          partidos: partidosNormalizados,
-          convocados: convocadosNormalizados,
-          rivales: rivalesNormalizados,
-          incidencias: incidenciasNormalizadas
-        }
+        message: `¡Sincronización exitosa! Se descargaron ${statsFallback.jugadores} jugadores, ${statsFallback.partidos} partidos y ${statsFallback.incidencias} incidencias.`,
+        datos: statsFallback
       };
     } catch (fallbackErr: any) {
       console.error('[ApiService] Error en descarga fallback de Sheets:', fallbackErr);
@@ -1022,6 +1051,26 @@ export const ApiService = {
 };
 
 // Helpers de normalización
+function normalizarTorneo(t: any): Torneo {
+  let tipo: any = 'Apertura';
+  const tipoStr = String(t.tipo || '').toLowerCase();
+  if (tipoStr.includes('clausura')) tipo = 'Clausura';
+  else if (tipoStr.includes('copa')) tipo = 'Copa';
+  else if (tipoStr.includes('amistoso')) tipo = 'Amistoso';
+  else if (tipoStr.includes('anual')) tipo = 'Anual';
+
+  return {
+    id: String(t.id || `torneo-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`),
+    nombre: String(t.nombre || 'Torneo'),
+    tipo: tipo,
+    anio: Number(t.anio) || new Date().getFullYear(),
+    estado: String(t.estado || '').toLowerCase() === 'cerrado' ? 'cerrado' : 'activo',
+    fechaInicio: t.fechaInicio ? String(t.fechaInicio).split('T')[0] : undefined,
+    fechaCierre: t.fechaCierre ? String(t.fechaCierre).split('T')[0] : undefined,
+    descripcion: t.descripcion ? String(t.descripcion) : undefined
+  };
+}
+
 function normalizarJugador(j: any): Jugador {
   return {
     id: String(j.id || ''),
