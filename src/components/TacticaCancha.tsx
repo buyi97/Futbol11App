@@ -39,8 +39,21 @@ interface TacticaCanchaProps {
 
   titulo?: string;
   colorEquipo?: 'verde' | 'amarillo' | 'azul' | 'rojo';
+  colorHex?: string; // Color personalizado del equipo / rival
   editableDorsales?: boolean;
   mostrarSuplentes?: boolean;
+  modoInteractivo?: boolean;
+}
+
+function getContrastingTextColor(hexColor?: string): string {
+  if (!hexColor) return '#ffffff';
+  let hex = hexColor.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  const r = parseInt(hex.substring(0, 2), 16) || 0;
+  const g = parseInt(hex.substring(2, 4), 16) || 0;
+  const b = parseInt(hex.substring(4, 6), 16) || 0;
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 135 ? '#0f1712' : '#ffffff';
 }
 
 export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
@@ -57,8 +70,10 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
   onEliminarSuplente,
   titulo,
   colorEquipo = 'verde',
+  colorHex,
   editableDorsales = true,
-  mostrarSuplentes = false
+  mostrarSuplentes = false,
+  modoInteractivo = false
 }) => {
   // Estado local para el intercambio de jugadores (tocar A, luego tocar B)
   const [jugadorParaSwapId, setJugadorParaSwapId] = useState<string | null>(null);
@@ -67,7 +82,16 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
   const [editandoNumeroId, setEditandoNumeroId] = useState<string | null>(null);
   const [numeroTemp, setNumeroTemp] = useState<string>('');
 
+  const textColor = colorHex ? getContrastingTextColor(colorHex) : undefined;
+
   const getBadgeColors = () => {
+    if (colorHex) {
+      return {
+        jerseyBg: '',
+        glow: 'ring-4 scale-110 shadow-lg',
+        indicator: ''
+      };
+    }
     switch (colorEquipo) {
       case 'amarillo':
         return {
@@ -259,11 +283,17 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
                   colors.jerseyBg
                 } ${
                   estaParaSwap 
-                    ? 'ring-4 ring-amber-400 scale-110 shadow-xl shadow-amber-400/40 animate-bounce'
+                    ? 'ring-4 ring-amber-400 scale-110 shadow-xl shadow-amber-400/40 animate-bounce' 
                     : estaSeleccionadoParaIncidencia 
                     ? colors.glow 
                     : 'group-hover:ring-2 group-hover:ring-white/60'
                 }`}
+                style={colorHex ? {
+                  backgroundColor: colorHex,
+                  color: textColor,
+                  borderColor: 'rgba(255,255,255,0.4)',
+                  boxShadow: estaSeleccionadoParaIncidencia ? `0 0 16px ${colorHex}` : undefined
+                } : undefined}
                 title={permitirIntercambio ? "Tocá para intercambiar posición" : undefined}
               >
                 {estaEditandoNumero ? (
@@ -348,6 +378,7 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
               <button
                 type="button"
                 onClick={onAgregarSuplenteClick}
+                style={colorHex ? { borderColor: `${colorHex}66`, color: colorHex } : undefined}
                 className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-[#3ddc84] hover:text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -368,6 +399,11 @@ export const TacticaCancha: React.FC<TacticaCanchaProps> = ({
                     key={s.id}
                     onClick={() => handleItemClick(s.id, true)}
                     onDoubleClick={() => handleDoubleClick(s.id, s.numero)}
+                    style={
+                      colorHex && estaSeleccionadoParaIncidencia
+                        ? { borderColor: colorHex, backgroundColor: `${colorHex}26` }
+                        : undefined
+                    }
                     className={`flex items-center justify-between gap-1 p-1.5 rounded-lg border text-left transition-all cursor-pointer group ${
                       estaParaSwap
                         ? 'bg-amber-500/30 border-amber-400 text-white ring-2 ring-amber-400 animate-pulse'

@@ -292,6 +292,9 @@ export default function App() {
         {vistaActual === 'nuevo-partido' && (
           <NuevoPartidoView
             jugadores={plantel}
+            nombreEquipo={nombreEquipo}
+            colorPropio={colorPropio}
+            colorRival={colorRival}
             onIniciarPartido={() => {
               cargarDatosLocales();
               setVistaActual('partido-vivo');

@@ -397,8 +397,8 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
 
     return (
       <div key={inc.id} className="flex items-start gap-2 py-1.5 px-2.5 rounded-lg bg-[#0f1712]/75 border border-[#243d2c]/70 hover:border-[#3ddc84]/40 transition-colors">
-        <span className="font-mono font-bold text-[#3ddc84] text-[11px] shrink-0 mt-0.5 min-w-[28px]">
-          {inc.minuto}'
+        <span className="font-mono font-bold text-[#3ddc84] text-[11px] shrink-0 mt-0.5 min-w-[42px]">
+          {inc.minuto}' <span className="text-[9px] text-zinc-400 font-sans font-semibold">({inc.tiempo || 1}T)</span>
         </span>
         <span className="text-sm shrink-0 mt-0.5">{icono}</span>
         <div className="flex-1 min-w-0">
@@ -931,13 +931,16 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
             </div>
           ) : (
             <div className="relative space-y-2.5 sm:space-y-3 before:hidden sm:before:block sm:before:absolute sm:before:inset-y-0 sm:before:left-1/2 sm:before:-translate-x-1/2 sm:before:w-0.5 sm:before:bg-[#243d2c]">
-              {incidenciasPrincipales.map((inc) => {
+              {incidenciasPrincipales.map((inc, index) => {
                 const esPropio = inc.equipo === 'propio';
                 const conv = esPropio ? convocadosMap.get(inc.jugador_id || '') : undefined;
                 const jug = esPropio ? jugadoresMap.get(inc.jugador_id || '') : undefined;
                 const convSec = esPropio && inc.jugador_id_secundario ? convocadosMap.get(inc.jugador_id_secundario) : undefined;
                 const jugSec = esPropio && inc.jugador_id_secundario ? jugadoresMap.get(inc.jugador_id_secundario) : undefined;
                 const rivalObj = !esPropio ? rivalesLocales.find(r => r.id === inc.jugador_id || String(r.numero) === inc.jugador_id) : undefined;
+
+                // Detectar si esta incidencia es la primera del 2T y la anterior era del 1T
+                const esCambioDeTiempoA2T = inc.tiempo === 2 && (index === 0 || incidenciasPrincipales[index - 1].tiempo === 1);
 
                 let icono = '⚽';
                 let textoPrincipal = '';
@@ -1003,58 +1006,72 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                 }
 
                 return (
-                  <div
-                    key={inc.id}
-                    className={`flex items-center gap-3 sm:gap-4 w-full ${
-                      esPropio ? 'sm:flex-row' : 'sm:flex-row-reverse'
-                    }`}
-                  >
-                    {/* Tarjeta del evento alineada al lado correspondiente */}
-                    <div className={`flex-1 ${esPropio ? 'text-left' : 'text-right'}`}>
-                      <div
-                        className={`inline-flex items-center gap-2 py-1.5 px-3 rounded-xl border transition-all ${
-                          esPropio
-                            ? 'bg-[#0f1712]/90 border-[#243d2c] hover:border-[#3ddc84]/60'
-                            : 'bg-[#0f1712]/90 border-[#243d2c] hover:border-[#ffb703]/60'
-                        }`}
-                        style={{
-                          borderLeftWidth: esPropio ? '3px' : undefined,
-                          borderLeftColor: esPropio ? colorClub : undefined,
-                          borderRightWidth: !esPropio ? '3px' : undefined,
-                          borderRightColor: !esPropio ? colorRivalElegido : undefined,
-                        }}
-                      >
-                        {esPropio && <span className="text-base shrink-0">{icono}</span>}
-                        <div className={`min-w-0 ${esPropio ? 'text-left' : 'text-right'}`}>
-                          <div className="text-xs font-semibold text-white truncate max-w-[200px] sm:max-w-[260px]">
-                            {textoPrincipal}
-                          </div>
-                          {detalleSecundario && (
-                            <div className="text-[10px] text-[#9aa89f] truncate max-w-[200px] sm:max-w-[260px]">
-                              {detalleSecundario}
-                            </div>
-                          )}
+                  <React.Fragment key={inc.id}>
+                    {/* Divisor de Inicio de Segundo Tiempo */}
+                    {esCambioDeTiempoA2T && (
+                      <div className="relative flex items-center justify-center my-3 sm:my-4 z-10">
+                        <div className="px-3 py-1 bg-[#0f1712] border border-[#243d2c] rounded-full text-[10px] font-bold text-zinc-400 uppercase tracking-widest shadow-md flex items-center gap-1.5">
+                          <span className="text-[#3ddc84]">⏱️</span>
+                          <span>Segundo Tiempo (2T)</span>
                         </div>
-                        {!esPropio && <span className="text-base shrink-0">{icono}</span>}
                       </div>
-                    </div>
+                    )}
 
-                    {/* Badge Minuto Central */}
                     <div
-                      className="shrink-0 z-10 w-9 h-9 rounded-full flex items-center justify-center font-mono font-bold text-xs shadow-md border"
-                      style={{
-                        backgroundColor: '#0f1712',
-                        borderColor: esPropio ? colorClub : colorRivalElegido,
-                        color: esPropio ? colorClub : colorRivalElegido,
-                      }}
-                      title={`${inc.minuto}' • ${esPropio ? nombreClub : partidoEditado.rival}`}
+                      className={`flex items-center gap-3 sm:gap-4 w-full ${
+                        esPropio ? 'sm:flex-row' : 'sm:flex-row-reverse'
+                      }`}
                     >
-                      {inc.minuto}'
-                    </div>
+                      {/* Tarjeta del evento alineada al lado correspondiente */}
+                      <div className={`flex-1 ${esPropio ? 'text-left' : 'text-right'}`}>
+                        <div
+                          className={`inline-flex items-center gap-2 py-1.5 px-3 rounded-xl border transition-all ${
+                            esPropio
+                              ? 'bg-[#0f1712]/90 border-[#243d2c] hover:border-[#3ddc84]/60'
+                              : 'bg-[#0f1712]/90 border-[#243d2c] hover:border-[#ffb703]/60'
+                          }`}
+                          style={{
+                            borderLeftWidth: esPropio ? '3px' : undefined,
+                            borderLeftColor: esPropio ? colorClub : undefined,
+                            borderRightWidth: !esPropio ? '3px' : undefined,
+                            borderRightColor: !esPropio ? colorRivalElegido : undefined,
+                          }}
+                        >
+                          {esPropio && <span className="text-base shrink-0">{icono}</span>}
+                          <div className={`min-w-0 ${esPropio ? 'text-left' : 'text-right'}`}>
+                            <div className="text-xs font-semibold text-white truncate max-w-[200px] sm:max-w-[260px]">
+                              {textoPrincipal}
+                            </div>
+                            {detalleSecundario && (
+                              <div className="text-[10px] text-[#9aa89f] truncate max-w-[200px] sm:max-w-[260px]">
+                                {detalleSecundario}
+                              </div>
+                            )}
+                          </div>
+                          {!esPropio && <span className="text-base shrink-0">{icono}</span>}
+                        </div>
+                      </div>
 
-                    {/* Espacio vacío para equilibrar el otro lado en pantallas medianas/grandes */}
-                    <div className="hidden sm:block flex-1" />
-                  </div>
+                      {/* Badge Minuto Central con distinción explícita de 1T o 2T */}
+                      <div
+                        className="shrink-0 z-10 px-2.5 h-8 rounded-full flex items-center justify-center gap-1 font-mono font-bold text-xs shadow-md border"
+                        style={{
+                          backgroundColor: '#0f1712',
+                          borderColor: esPropio ? colorClub : colorRivalElegido,
+                          color: esPropio ? colorClub : colorRivalElegido,
+                        }}
+                        title={`${inc.minuto}' (${inc.tiempo || 1}T) • ${esPropio ? nombreClub : partidoEditado.rival}`}
+                      >
+                        <span>{inc.minuto}'</span>
+                        <span className="text-[10px] font-sans font-bold opacity-80">
+                          ({inc.tiempo || 1}T)
+                        </span>
+                      </div>
+
+                      {/* Espacio vacío para equilibrar el otro lado en pantallas medianas/grandes */}
+                      <div className="hidden sm:block flex-1" />
+                    </div>
+                  </React.Fragment>
                 );
               })}
             </div>

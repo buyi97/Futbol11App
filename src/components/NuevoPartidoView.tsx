@@ -43,7 +43,7 @@ import {
   ModoRival, 
   CondicionPartido 
 } from '../types';
-import { getPosicionBadge } from '../utils/footballCalculations';
+import { getPosicionBadge, getContrastingTextColor } from '../utils/footballCalculations';
 import { ApiService } from '../services/api';
 import { StorageService, PartidoEnVivoDraft } from '../services/storage';
 import { TacticaCancha, JugadorEnCancha } from './TacticaCancha';
@@ -55,6 +55,9 @@ interface NuevoPartidoViewProps {
   jugadores: Jugador[];
   onIniciarPartido: () => void;
   onCancelar: () => void;
+  nombreEquipo?: string;
+  colorPropio?: string;
+  colorRival?: string;
 }
 
 interface RivalItem {
@@ -68,11 +71,18 @@ interface RivalItem {
 export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
   jugadores,
   onIniciarPartido,
-  onCancelar
+  onCancelar,
+  nombreEquipo: propNombreEquipo,
+  colorPropio: propColorPropio,
+  colorRival: propColorRival
 }) => {
-  // Datos generales
+  // Datos y configuración del club
+  const clubConfig = StorageService.getClubConfig();
+  const nombreEquipo = propNombreEquipo || clubConfig.nombre || StorageService.getNombreEquipo() || 'Los Halcones FC';
+  const colorClub = propColorPropio || clubConfig.colorPropio || '#3ddc84';
+  const colorRivalConfig = propColorRival || clubConfig.colorRival || '#e63946';
+
   const torneos = StorageService.getTorneos();
-  const nombreEquipo = StorageService.getNombreEquipo();
   const [torneoId, setTorneoId] = useState<string>(() => StorageService.getTorneoActivo()?.id || '');
 
   const partidosExistentes = StorageService.getPartidos();
@@ -557,7 +567,11 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
     });
 
     StorageService.savePartidoEnVivo(draft);
-    await ApiService.crearPartido(nuevoPartido, convocadosFinales, rivalesFinales);
+    
+    // Sincronización en segundo plano sin bloquear el paso inmediato al partido en vivo
+    ApiService.crearPartido(nuevoPartido, convocadosFinales, rivalesFinales).catch(err => {
+      console.warn('Sincronización en segundo plano de partido nuevo:', err);
+    });
 
     setIniciando(false);
     onIniciarPartido();
@@ -1349,7 +1363,8 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                           onDragStart={(e) => {
                             e.dataTransfer.setData('text/plain', JSON.stringify({ tipo: 'slot', id: jugador.id }));
                           }}
-                          className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#182a1f] border-2 border-[#3ddc84] shadow-xl flex items-center justify-center text-white font-display font-bold text-sm sm:text-base ring-2 ring-black/40 group-hover:border-white transition-all"
+                          style={{ borderColor: colorClub }}
+                          className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#182a1f] border-2 shadow-xl flex items-center justify-center text-white font-display font-bold text-sm sm:text-base ring-2 ring-black/40 group-hover:border-white transition-all"
                         >
                           <span>{dorsal}</span>
                           
@@ -1372,7 +1387,10 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                           <span className="text-[10px] sm:text-[11px] font-bold text-white truncate block leading-tight">
                             {jugador.nombre}
                           </span>
-                          <span className="text-[8px] sm:text-[9px] text-[#3ddc84] font-semibold block uppercase">
+                          <span 
+                            className="text-[8px] sm:text-[9px] font-semibold block uppercase"
+                            style={{ color: colorClub }}
+                          >
                             {coords.pos}
                           </span>
                         </div>
@@ -1380,7 +1398,10 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                     ) : (
                       /* Slot Vacío */
                       <div className={`flex flex-col items-center ${jugadorSeleccionadoId ? 'animate-pulse' : ''}`}>
-                        <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/40 border-2 border-dashed border-white/60 hover:border-[#3ddc84] hover:bg-[#3ddc84]/20 flex items-center justify-center text-white font-bold text-xs shadow-md transition-all">
+                        <div 
+                          style={jugadorSeleccionadoId ? { borderColor: colorClub } : undefined}
+                          className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/40 border-2 border-dashed border-white/60 hover:border-white flex items-center justify-center text-white font-bold text-xs shadow-md transition-all"
+                        >
                           <span>{coords.pos}</span>
                         </div>
                         <div className="mt-0.5 px-1 py-0.2 rounded bg-black/50 text-[8px] text-zinc-300 font-medium">
@@ -1401,8 +1422,8 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="font-display font-bold text-lg text-white uppercase tracking-wider flex items-center gap-2">
-              <Shield className="w-4 h-4 text-[#ffb703]" />
-              4. Jugadores del Rival ({rival || 'Equipo Rival'})
+              <Shield className="w-4 h-4" style={{ color: colorRivalConfig }} />
+              <span>4. Jugadores del Rival ({rival || 'Equipo Rival'})</span>
             </h2>
             <p className="text-xs text-[#9aa89f]">
               Disposición táctica. Tocá y tocá otro para intercambiarlos. Doble clic para cambiar número o agregá nombres.
@@ -1411,7 +1432,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
 
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-[#0f1712] border border-[#243d2c] text-white">
-              <strong className="text-[#ffb703]">{rivalesTitulares.length}</strong> Titulares • <strong className="text-zinc-400">{rivalesSuplentes.length}</strong> Suplentes
+              <strong style={{ color: colorRivalConfig }}>{rivalesTitulares.length}</strong> Titulares • <strong className="text-zinc-400">{rivalesSuplentes.length}</strong> Suplentes
             </span>
           </div>
         </div>
@@ -1426,9 +1447,14 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
               key={esquema}
               type="button"
               onClick={() => setFormacionRival(esquema)}
+              style={
+                formacionRival === esquema
+                  ? { backgroundColor: `${colorRivalConfig}26`, borderColor: colorRivalConfig, color: colorRivalConfig }
+                  : undefined
+              }
               className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
                 formacionRival === esquema
-                  ? 'bg-[#ffb703]/20 border-[#ffb703] text-[#ffb703]'
+                  ? 'shadow-sm'
                   : 'bg-[#0f1712] border-[#243d2c] text-zinc-400 hover:text-white'
               }`}
             >
@@ -1443,7 +1469,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
             titulo={`Formación Rival: ${rival || 'Equipo Rival'} (${formacionRival})`}
             jugadores={jugadoresCanchaRival}
             suplentes={suplentesCanchaRival}
-            colorEquipo="amarillo"
+            colorHex={colorRivalConfig}
             permitirIntercambio={true}
             onIntercambiarJugadores={handleIntercambiarRivales}
             onEditarNumero={handleEditarNumeroRival}
@@ -1478,7 +1504,8 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                     value={r.numero}
                     onFocus={(e) => e.target.select()}
                     onChange={(e) => handleEditarNumeroRival(r.id, parseInt(e.target.value) || 1)}
-                    className="w-full px-1.5 py-1 bg-[#182a1f] border border-[#243d2c] rounded-lg text-center font-display font-bold text-xs text-[#ffb703] focus:outline-none focus:border-[#ffb703]"
+                    style={{ color: colorRivalConfig }}
+                    className="w-full px-1.5 py-1 bg-[#182a1f] border border-[#243d2c] rounded-lg text-center font-display font-bold text-xs focus:outline-none"
                     title="Dorsal Rival"
                   />
                 </div>
@@ -1489,13 +1516,16 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                     value={r.nombre}
                     onChange={(e) => handleEditarNombreRival(r.id, e.target.value)}
                     placeholder="Nombre / Apellido"
-                    className="w-full px-2 py-1 bg-[#182a1f] border border-[#243d2c] rounded-lg text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#ffb703]"
+                    className="w-full px-2 py-1 bg-[#182a1f] border border-[#243d2c] rounded-lg text-xs text-white placeholder-zinc-500 focus:outline-none"
                   />
                 </div>
 
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                  r.titular ? 'bg-amber-400/20 text-amber-300' : 'bg-zinc-800 text-zinc-400'
-                }`}>
+                <span 
+                  style={r.titular ? { backgroundColor: `${colorRivalConfig}26`, color: colorRivalConfig } : undefined}
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                    r.titular ? '' : 'bg-zinc-800 text-zinc-400'
+                  }`}
+                >
                   {r.titular ? 'TIT' : 'SUP'}
                 </span>
               </div>
@@ -1507,9 +1537,10 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
             <button
               type="button"
               onClick={() => setModalAgregarSuplenteRival(true)}
-              className="px-4 py-2 bg-[#0f1712] hover:bg-[#243d2c] text-[#ffb703] hover:text-white text-xs font-semibold rounded-xl border border-[#243d2c] hover:border-[#ffb703]/50 flex items-center gap-2 cursor-pointer transition-all shadow-sm"
+              style={{ color: colorRivalConfig, borderColor: `${colorRivalConfig}40` }}
+              className="px-4 py-2 bg-[#0f1712] hover:bg-[#243d2c] text-xs font-semibold rounded-xl border flex items-center gap-2 cursor-pointer transition-all shadow-sm"
             >
-              <UserPlus className="w-4 h-4 text-[#ffb703]" />
+              <UserPlus className="w-4 h-4" style={{ color: colorRivalConfig }} />
               Agregar suplente Rival
             </button>
             <span className="text-[11px] text-zinc-500">
@@ -1546,8 +1577,8 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
           <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl w-full max-w-sm p-5 shadow-2xl relative">
             <div className="flex items-center justify-between border-b border-[#243d2c] pb-3 mb-3">
               <h3 className="font-display font-bold text-base text-white uppercase tracking-wider flex items-center gap-2">
-                <Shield className="w-4 h-4 text-[#ffb703]" />
-                Agregar Suplente Rival
+                <Shield className="w-4 h-4" style={{ color: colorRivalConfig }} />
+                <span>Agregar Suplente Rival</span>
               </h3>
               <button
                 type="button"
@@ -1570,7 +1601,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                   required
                   value={nuevoSuplenteRivalNum}
                   onChange={(e) => setNuevoSuplenteRivalNum(Number(e.target.value))}
-                  className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white font-bold text-sm focus:outline-none focus:border-[#ffb703]"
+                  className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white font-bold text-sm focus:outline-none"
                 />
               </div>
 
@@ -1583,7 +1614,7 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                   placeholder="Ej: Martínez"
                   value={nuevoSuplenteRivalNom}
                   onChange={(e) => setNuevoSuplenteRivalNom(e.target.value)}
-                  className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#ffb703]"
+                  className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none"
                 />
               </div>
 
@@ -1597,7 +1628,8 @@ export const NuevoPartidoView: React.FC<NuevoPartidoViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-[#ffb703] hover:bg-[#e0a102] text-[#0f1712] font-bold rounded-lg cursor-pointer transition-colors shadow-md"
+                  style={{ backgroundColor: colorRivalConfig, color: getContrastingTextColor(colorRivalConfig) }}
+                  className="px-4 py-1.5 font-bold rounded-lg cursor-pointer transition-opacity hover:opacity-90 shadow-md"
                 >
                   Agregar Suplente
                 </button>

@@ -570,3 +570,20 @@ export function getPosicionBadge(posicion: Jugador['posicion']) {
       return { label: 'JUG', bg: 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30' };
   }
 }
+
+/**
+ * Calcula un color de texto contrastante ('#0f1712' o '#ffffff') según la luminancia del color de fondo
+ */
+export function getContrastingTextColor(hexColor?: string): string {
+  if (!hexColor) return '#ffffff';
+  let hex = hexColor.replace('#', '');
+  if (hex.length === 3) {
+    hex = hex.split('').map(c => c + c).join('');
+  }
+  if (hex.length !== 6) return '#ffffff';
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.55 ? '#0f1712' : '#ffffff';
+}
