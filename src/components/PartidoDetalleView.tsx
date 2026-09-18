@@ -100,18 +100,17 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   const [nuevoRivalTitular, setNuevoRivalTitular] = useState(false);
   const [guardandoAlineaciones, setGuardandoAlineaciones] = useState(false);
 
-  const handleConfirmarEliminarPartido = async () => {
-    setBorrandoPartido(true);
-    try {
-      await ApiService.eliminarPartido(partido.id);
-      setModalEliminarPartido(false);
-      if (onEliminarPartido) {
-        onEliminarPartido();
-      } else {
-        onVolver();
-      }
-    } finally {
-      setBorrandoPartido(false);
+  const handleConfirmarEliminarPartido = () => {
+    const pId = partido.id;
+    // Cerrar modal de inmediato y navegar/actualizar sin bloqueos
+    setModalEliminarPartido(false);
+    setBorrandoPartido(false);
+
+    ApiService.eliminarPartido(pId);
+    if (onEliminarPartido) {
+      onEliminarPartido();
+    } else {
+      onVolver();
     }
   };
 

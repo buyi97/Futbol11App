@@ -68,17 +68,16 @@ export const HistorialView: React.FC<HistorialViewProps> = ({
   const [partidoABorrar, setPartidoABorrar] = useState<Partido | null>(null);
   const [borrando, setBorrando] = useState(false);
 
-  const handleConfirmarBorrarPartido = async () => {
+  const handleConfirmarBorrarPartido = () => {
     if (!partidoABorrar) return;
-    setBorrando(true);
-    try {
-      await ApiService.eliminarPartido(partidoABorrar.id);
-      setPartidoABorrar(null);
-      if (onActualizarPartidos) {
-        onActualizarPartidos();
-      }
-    } finally {
-      setBorrando(false);
+    const pId = partidoABorrar.id;
+    // Cerrar modal de inmediato y eliminar optimistamente
+    setPartidoABorrar(null);
+    setBorrando(false);
+
+    ApiService.eliminarPartido(pId);
+    if (onActualizarPartidos) {
+      onActualizarPartidos();
     }
   };
 

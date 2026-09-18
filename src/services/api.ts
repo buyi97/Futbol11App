@@ -447,15 +447,29 @@ export const ApiService = {
   },
 
   /**
-   * Eliminar un partido tanto localmente como en el backend Google Sheets
+   * Eliminar un partido tanto localmente como en el backend Google Sheets.
+   * Realiza una eliminación optimista inmediata en local para que la UI
+   * no quede bloqueada esperando la red, y sincroniza en segundo plano.
    */
   async eliminarPartido(partidoId: string): Promise<ApiResponse<string>> {
+    // 1. Eliminar inmediatamente del almacenamiento local (optimistic delete)
     StorageService.eliminarPartido(partidoId);
-    const res = await ApiService.request<string>('eliminarPartido', { partido_id: partidoId, id: partidoId });
-    if (!res.ok && res.offline) {
-      StorageService.agregarAColaSync('eliminarPartido', { partido_id: partidoId });
+
+    // Disparar evento para que cualquier vista suscrita actualice su estado al instante
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('futbol11-datos-actualizados'));
     }
-    return { ok: true, data: 'Partido eliminado', offline: res.offline };
+
+    try {
+      const res = await ApiService.request<string>('eliminarPartido', { partido_id: partidoId, id: partidoId });
+      if (!res.ok && res.offline) {
+        StorageService.agregarAColaSync('eliminarPartido', { partido_id: partidoId });
+      }
+      return { ok: true, data: 'Partido eliminado', offline: res.offline };
+    } catch (e) {
+      StorageService.agregarAColaSync('eliminarPartido', { partido_id: partidoId });
+      return { ok: true, data: 'Partido eliminado localmente (sincronización pendiente)', offline: true };
+    }
   },
 
   /**

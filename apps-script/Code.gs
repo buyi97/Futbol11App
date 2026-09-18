@@ -959,28 +959,47 @@ function findRowIndexByKey_(sheet, key) {
 }
 
 function deleteRowById_(sheet, id) {
-  const rowIdx = findRowIndexById_(sheet, id);
-  if (rowIdx > 0) {
-    sheet.deleteRow(rowIdx);
-    return true;
-  }
-  return false;
+  return deleteRowsByFieldValue_(sheet, 'id', id) > 0;
 }
 
 function deleteRowsByFieldValue_(sheet, fieldName, value) {
   const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return 0;
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const colIdx = headers.indexOf(fieldName) + 1;
-  if (colIdx <= 0) return 0;
+  const lastCol = sheet.getLastColumn();
+  if (lastRow <= 1 || lastCol < 1) return 0;
 
-  const values = sheet.getRange(1, colIdx, lastRow, 1).getValues();
+  const dataRange = sheet.getRange(1, 1, lastRow, lastCol);
+  const data = dataRange.getValues();
+  if (data.length <= 1) return 0;
+
+  const headers = data[0];
+  const colIdx = headers.indexOf(fieldName);
+  if (colIdx < 0) return 0;
+
+  const strValue = String(value).trim();
+  const rowsToKeep = [headers];
   let deleted = 0;
-  for (let i = values.length - 1; i >= 1; i--) {
-    if (String(values[i][0]) === String(value)) {
-      sheet.deleteRow(i + 1);
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (String(row[colIdx]).trim() === strValue) {
       deleted++;
+    } else {
+      // Solo conservar la fila si contiene algún dato real
+      const hasContent = row.some(function(cell) {
+        return cell !== '' && cell !== null && cell !== undefined;
+      });
+      if (hasContent) {
+        rowsToKeep.push(row);
+      }
     }
   }
+
+  if (deleted > 0) {
+    // 1. Limpiar el contenido de las celdas en un solo paso (preserva estilos, formato y anchos)
+    dataRange.clearContent();
+    // 2. Re-escribir las filas en una única llamada en bloque ultra rápida
+    sheet.getRange(1, 1, rowsToKeep.length, lastCol).setValues(rowsToKeep);
+  }
+
   return deleted;
 }
