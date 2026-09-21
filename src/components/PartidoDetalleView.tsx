@@ -36,8 +36,9 @@ import {
   Shirt,
   UserPlus
 } from 'lucide-react';
-import { Partido, Jugador, Convocado, RivalJugador, Incidencia, RolUsuario, TipoIncidencia, EquipoIncidencia, Torneo } from '../types';
+import { Partido, Jugador, Convocado, RivalJugador, Incidencia, RolUsuario, TipoIncidencia, EquipoIncidencia, Torneo, MinutosJugadorDetalle } from '../types';
 import { calcularMinutosPartido, getPosicionBadge } from '../utils/footballCalculations';
+import { FichaJugadorPartidoModal } from './FichaJugadorPartidoModal';
 import { StorageService } from '../services/storage';
 import { ApiService } from '../services/api';
 
@@ -88,6 +89,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
 
   const [modalEliminarPartido, setModalEliminarPartido] = useState(false);
   const [borrandoPartido, setBorrandoPartido] = useState(false);
+  const [jugadorFichaSeleccionado, setJugadorFichaSeleccionado] = useState<MinutosJugadorDetalle | null>(null);
 
   // Estados locales editables para convocados y rivales
   const [convocadosLocales, setConvocadosLocales] = useState<Convocado[]>(() => convocados);
@@ -349,8 +351,9 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
     const esPropio = inc.equipo === 'propio';
     const conv = esPropio ? convocadosMap.get(inc.jugador_id || '') : undefined;
     const jug = esPropio ? jugadoresMap.get(inc.jugador_id || '') : undefined;
-    const convSec = esPropio && inc.jugador_id_secundario ? convocadosMap.get(inc.jugador_id_secundario) : undefined;
-    const jugSec = esPropio && inc.jugador_id_secundario ? jugadoresMap.get(inc.jugador_id_secundario) : undefined;
+    const idAsist = inc.asistencia_id || (inc.tipo === 'gol' ? inc.jugador_id_secundario : undefined);
+    const convSec = esPropio && idAsist ? convocadosMap.get(idAsist) : undefined;
+    const jugSec = esPropio && idAsist ? jugadoresMap.get(idAsist) : undefined;
 
     const rivalObj = !esPropio ? rivales.find(r => r.id === inc.jugador_id || String(r.numero) === inc.jugador_id) : undefined;
 
@@ -957,8 +960,9 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                 const esPropio = inc.equipo === 'propio';
                 const conv = esPropio ? convocadosMap.get(inc.jugador_id || '') : undefined;
                 const jug = esPropio ? jugadoresMap.get(inc.jugador_id || '') : undefined;
-                const convSec = esPropio && inc.jugador_id_secundario ? convocadosMap.get(inc.jugador_id_secundario) : undefined;
-                const jugSec = esPropio && inc.jugador_id_secundario ? jugadoresMap.get(inc.jugador_id_secundario) : undefined;
+                const idAsist = inc.asistencia_id || (inc.tipo === 'gol' ? inc.jugador_id_secundario : undefined);
+                const convSec = esPropio && idAsist ? convocadosMap.get(idAsist) : undefined;
+                const jugSec = esPropio && idAsist ? jugadoresMap.get(idAsist) : undefined;
                 const rivalObj = !esPropio ? rivalesLocales.find(r => r.id === inc.jugador_id || String(r.numero) === inc.jugador_id) : undefined;
 
                 // Detectar si esta incidencia es la primera del 2T y la anterior era del 1T
@@ -1286,6 +1290,17 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
             </div>
           </div>
 
+          {/* Aviso interactivo para ver la ficha del jugador */}
+          <div className="mb-2.5 px-3 py-2 bg-[#0f1712] border border-[#243d2c] rounded-xl flex items-center justify-between text-xs">
+            <span className="text-[#9aa89f] flex items-center gap-1.5">
+              <span className="text-[#3ddc84] text-sm">💡</span>
+              <span>Tocá en cualquier jugador para ver su <strong>ficha individual</strong> (minutos, goles, tiros, faltas, etc.)</span>
+            </span>
+            <span className="text-[10px] text-[#3ddc84] font-bold uppercase tracking-wider hidden sm:inline-block">
+              Interactiva
+            </span>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
@@ -1296,6 +1311,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                   <th className="hidden md:table-cell py-2.5 px-2 text-center">Entró / Salió</th>
                   <th className="py-2.5 px-2 text-right">Min.</th>
                   <th className="py-2.5 px-2 sm:px-3 text-right">Aportes</th>
+                  <th className="py-2.5 px-2 text-center w-8">Ficha</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#243d2c]/60">
@@ -1305,13 +1321,18 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                   const dorsalMostrar = conv?.numero !== undefined && conv?.numero !== null ? conv.numero : item.jugador.numero;
 
                   return (
-                    <tr key={item.jugador.id} className="hover:bg-[#0f1712]/50 transition-colors">
-                      <td className="sticky left-0 z-10 bg-[#182a1f] border-r border-[#243d2c]/80 py-2 px-2.5 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)]">
+                    <tr 
+                      key={item.jugador.id} 
+                      onClick={() => setJugadorFichaSeleccionado(item)}
+                      className="hover:bg-[#0f1712] cursor-pointer transition-colors group"
+                      title={`Ver ficha individual de ${item.jugador.nombre} en este partido`}
+                    >
+                      <td className="sticky left-0 z-10 bg-[#182a1f] group-hover:bg-[#0f1712] border-r border-[#243d2c]/80 py-2 px-2.5 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)] transition-colors">
                         <div className="flex items-center gap-1.5 max-w-[110px] sm:max-w-none">
                           <span className="font-display font-bold text-xs sm:text-sm text-[#3ddc84] shrink-0">
                             #{dorsalMostrar}
                           </span>
-                          <span className="font-semibold text-white truncate text-xs">
+                          <span className="font-semibold text-white group-hover:text-[#3ddc84] truncate text-xs transition-colors">
                             {item.jugador.nombre}
                           </span>
                         </div>
@@ -1443,6 +1464,12 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                           )}
                         </div>
                       </td>
+
+                      <td className="py-2 px-2 text-center w-8">
+                        <span className="w-6 h-6 rounded-lg bg-[#243d2c]/40 group-hover:bg-[#3ddc84]/20 text-[#9aa89f] group-hover:text-[#3ddc84] inline-flex items-center justify-center transition-all text-xs">
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </span>
+                      </td>
                     </tr>
                   );
                 })}
@@ -1497,8 +1524,9 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                 const convocadoObj = convocados.find(c => c.jugador_id === inc.jugador_id);
                 const jugSec = inc.jugador_id_secundario ? jugadoresMap.get(inc.jugador_id_secundario) : null;
                 const convocadoSecObj = inc.jugador_id_secundario ? convocados.find(c => c.jugador_id === inc.jugador_id_secundario) : null;
-                const asistObj = inc.asistencia_id ? jugadoresMap.get(inc.asistencia_id) : null;
-                const convocadoAsist = inc.asistencia_id ? convocados.find(c => c.jugador_id === inc.asistencia_id) : null;
+                const idAsist = inc.asistencia_id || (inc.tipo === 'gol' ? inc.jugador_id_secundario : undefined);
+                const asistObj = idAsist ? jugadoresMap.get(idAsist) : null;
+                const convocadoAsist = idAsist ? convocados.find(c => c.jugador_id === idAsist) : null;
                 const rivalObj = rivales?.find(r => String(r.numero) === String(inc.jugador_id) || r.id === inc.jugador_id);
                 const esPropio = inc.equipo === 'propio';
 
@@ -2854,6 +2882,21 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
           </div>
         );
       })()}
+
+      {/* Modal Ficha Individual del Jugador en este Partido */}
+      {jugadorFichaSeleccionado && (
+        <FichaJugadorPartidoModal
+          detalle={jugadorFichaSeleccionado}
+          partido={partidoEditado}
+          incidencias={incidenciasLocales}
+          jugadores={jugadores}
+          convocados={convocadosLocales}
+          colorClub={colorClub}
+          nombreClub={nombreClub}
+          duracionTotalMin={duracionTotalMin}
+          onClose={() => setJugadorFichaSeleccionado(null)}
+        />
+      )}
 
     </div>
   );

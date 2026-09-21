@@ -83,6 +83,8 @@ export interface PartidoEnVivoDraft {
     tiempo: 1 | 2;
     segundosTotales: number; // segundos acumulados en el tiempo actual
     corriendo: boolean;
+    startedAtTimestamp?: number | null;
+    baseSeconds?: number;
     ultimoTimestamp: number;
     agregado1T: number;
     agregado2T: number;
@@ -493,7 +495,25 @@ export const StorageService = {
   getPartidoEnVivo(): PartidoEnVivoDraft | null {
     try {
       const data = localStorage.getItem(KEYS.PARTIDO_EN_VIVO);
-      return data ? JSON.parse(data) : null;
+      if (!data) return null;
+      const draft: PartidoEnVivoDraft = JSON.parse(data);
+
+      // Si el partido estaba corriendo cuando se pausó o cerró la app en segundo plano,
+      // recuperar el tiempo real transcurrido mediante el timestamp
+      if (draft && draft.timer && draft.timer.corriendo && draft.timer.ultimoTimestamp) {
+        const ahora = Date.now();
+        const deltaSegundos = Math.floor((ahora - draft.timer.ultimoTimestamp) / 1000);
+        // Si el tiempo transcurrido es razonable (menos de 3 horas), sumarlo
+        if (deltaSegundos > 0 && deltaSegundos < 10800) {
+          draft.timer.segundosTotales += deltaSegundos;
+          draft.timer.ultimoTimestamp = ahora;
+          if (draft.timer.startedAtTimestamp) {
+            draft.timer.startedAtTimestamp = ahora - (draft.timer.segundosTotales * 1000);
+          }
+        }
+      }
+
+      return draft;
     } catch {
       return null;
     }

@@ -1131,17 +1131,29 @@ function normalizarRival(r: any): RivalJugador {
 }
 
 function normalizarIncidencia(i: any): Incidencia {
+  const jugadorSecundario = (i.jugador_id_secundario || i.jugador_secundario_id || i.asistencia_id)
+    ? String(i.jugador_id_secundario || i.jugador_secundario_id || i.asistencia_id).trim()
+    : undefined;
+
+  const asistencia = (i.asistencia_id || (i.tipo === 'gol' ? jugadorSecundario : undefined))
+    ? String(i.asistencia_id || (i.tipo === 'gol' ? jugadorSecundario : '')).trim()
+    : undefined;
+
   return {
     id: String(i.id || ''),
     partido_id: String(i.partido_id || ''),
     tipo: i.tipo as any,
     minuto: Number(i.minuto) || 0,
     segundo: Number(i.segundo) || 0,
+    minuto_display: i.minuto_display ? String(i.minuto_display) : undefined,
+    minuto_agregado: i.minuto_agregado !== undefined && i.minuto_agregado !== null ? Number(i.minuto_agregado) : undefined,
     tiempo: Number(i.tiempo) === 2 ? 2 : 1,
     equipo: i.equipo === 'rival' ? 'rival' : 'propio',
-    jugador_id: i.jugador_id ? String(i.jugador_id) : undefined,
-    jugador_id_secundario: (i.jugador_id_secundario || i.jugador_secundario_id) ? String(i.jugador_id_secundario || i.jugador_secundario_id) : undefined,
-    detalle: i.detalle ? String(i.detalle) : undefined
+    jugador_id: i.jugador_id ? String(i.jugador_id).trim() : undefined,
+    jugador_id_secundario: jugadorSecundario,
+    asistencia_id: asistencia,
+    detalle: i.detalle ? String(i.detalle) : undefined,
+    created_at: i.created_at ? Number(i.created_at) : undefined
   };
 }
 

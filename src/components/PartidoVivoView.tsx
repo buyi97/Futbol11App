@@ -10,7 +10,7 @@
  * - Guardado continuo en localStorage y encolado en background.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   Play, 
   Pause, 
@@ -153,13 +153,36 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
   const jugadoresMap = new Map<string, Jugador>(jugadores.map(j => [j.id, j]));
 
-  // Manejador del reloj con requestAnimationFrame y timestamp real para que no se atrase en segundo plano
-  const timerRef = useRef<number | null>(null);
-  const lastTimeRef = useRef<number>(Date.now());
+  // Manejador del reloj con timestamp de precisión absoluta para evitar desfases por throttling en móviles
+  const startedAtRef = useRef<number | null>(
+    draft?.timer.corriendo
+      ? (draft.timer.startedAtTimestamp || (Date.now() - (draft.timer.segundosTotales || 0) * 1000))
+      : null
+  );
+  const baseSecondsRef = useRef<number>(
+    draft?.timer.corriendo ? 0 : (draft?.timer.segundosTotales || 0)
+  );
+
+  // Sincronizar el reloj de forma exacta contra Date.now()
+  const sincronizarReloj = useCallback(() => {
+    if (corriendo && startedAtRef.current) {
+      const ahora = Date.now();
+      const transcurridos = Math.floor((ahora - startedAtRef.current) / 1000);
+      const total = baseSecondsRef.current + transcurridos;
+      setSegundosTotales(Math.max(0, total));
+    }
+  }, [corriendo]);
 
   // Ajustar minutos del reloj manualmente (+1 min / -1 min)
   const ajustarMinutosReloj = (deltaMinutos: number) => {
-    setSegundosTotales(prev => Math.max(0, prev + deltaMinutos * 60));
+    setSegundosTotales(prev => {
+      const nuevo = Math.max(0, prev + deltaMinutos * 60);
+      baseSecondsRef.current = nuevo;
+      if (corriendo) {
+        startedAtRef.current = Date.now();
+      }
+      return nuevo;
+    });
   };
 
   // Actualizar dorsal propio en vivo
@@ -226,22 +249,41 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
   useEffect(() => {
     if (corriendo) {
-      lastTimeRef.current = Date.now();
-      timerRef.current = window.setInterval(() => {
-        const now = Date.now();
-        const delta = Math.floor((now - lastTimeRef.current) / 1000);
-        if (delta >= 1) {
-          setSegundosTotales(prev => prev + delta);
-          lastTimeRef.current = now;
+      if (!startedAtRef.current) {
+        startedAtRef.current = Date.now();
+        baseSecondsRef.current = segundosTotales;
+      }
+      // Sincronizar de inmediato
+      sincronizarReloj();
+
+      // Intervalo de renderizado frecuente
+      const timerInterval = window.setInterval(() => {
+        sincronizarReloj();
+      }, 250);
+
+      // Eventos para despertar y sincronizar el cronómetro apenas se desbloquea el teléfono o se vuelve a la pestaña
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          sincronizarReloj();
         }
-      }, 500);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
+      };
+
+      const handleWakeSync = () => {
+        sincronizarReloj();
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('focus', handleWakeSync);
+      window.addEventListener('pageshow', handleWakeSync);
+
+      return () => {
+        clearInterval(timerInterval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('focus', handleWakeSync);
+        window.removeEventListener('pageshow', handleWakeSync);
+      };
     }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [corriendo]);
+  }, [corriendo, sincronizarReloj]);
 
   // Persistir estado cada vez que cambia (evitar si el partido ya fue finalizado)
   useEffect(() => {
@@ -260,6 +302,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
         tiempo,
         segundosTotales,
         corriendo,
+        startedAtTimestamp: corriendo ? startedAtRef.current : null,
+        baseSeconds: baseSecondsRef.current,
         ultimoTimestamp: Date.now(),
         agregado1T,
         agregado2T,
@@ -323,10 +367,27 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
   // Controles de Cronómetro
   const togglePlayPausa = () => {
-    setCorriendo(!corriendo);
+    if (!corriendo) {
+      // Iniciar o reanudar
+      startedAtRef.current = Date.now();
+      baseSecondsRef.current = segundosTotales;
+      setCorriendo(true);
+    } else {
+      // Pausar
+      if (startedAtRef.current) {
+        const transcurridos = Math.floor((Date.now() - startedAtRef.current) / 1000);
+        const finalSecs = baseSecondsRef.current + transcurridos;
+        setSegundosTotales(Math.max(0, finalSecs));
+        baseSecondsRef.current = Math.max(0, finalSecs);
+      }
+      startedAtRef.current = null;
+      setCorriendo(false);
+    }
   };
 
   const iniciarSegundoTiempo = () => {
+    startedAtRef.current = null;
+    baseSecondsRef.current = 0;
     setCorriendo(false);
     setTiempo(2);
     setSegundosTotales(0);
@@ -340,6 +401,14 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
   // Abrir selector de incidencia
   const triggerIncidencia = (tipo: TipoIncidencia) => {
+    // Sincronizar el reloj inmediatamente antes de congelar el minuto
+    if (corriendo && startedAtRef.current) {
+      const ahora = Date.now();
+      const transcurridos = Math.floor((ahora - startedAtRef.current) / 1000);
+      const total = baseSecondsRef.current + transcurridos;
+      setSegundosTotales(Math.max(0, total));
+    }
+
     const minInfo = calcularMinutoDisplay(segundosTotales, tiempo, duracionReglamentariaMin);
     setMinutoInfoCongelado(minInfo);
     setMinutoCongelado(minInfo.minuto);
@@ -404,10 +473,21 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   ) => {
     if (!tipoSeleccionado || !draft) return;
 
+    // Sincronizar el reloj antes de calcular el minuto
+    sincronizarReloj();
     const minInfo = minutoInfoCongelado || calcularMinutoDisplay(segundosTotales, tiempo, duracionReglamentariaMin);
     const cleanJugadorId = typeof jugadorId === 'object' && jugadorId !== null 
       ? ((jugadorId as any).id || String((jugadorId as any).numero)) 
       : String(jugadorId || '').trim();
+
+    // Si es gol, la asistencia debe asignarse inequívocamente tanto a asistencia_id como a jugador_id_secundario
+    const asistFinal = (tipoSeleccionado === 'gol' && (asistId || asistenciaId || jugadorSecundarioId))
+      ? String(asistId || asistenciaId || jugadorSecundarioId).trim()
+      : undefined;
+
+    const secundarioFinal = tipoSeleccionado === 'gol'
+      ? asistFinal
+      : (jugadorSecundarioId ? String(jugadorSecundarioId).trim() : undefined);
 
     const nuevaInc: Incidencia = {
       id: 'inc-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
@@ -420,8 +500,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
       tipo: tipoSeleccionado,
       equipo: equipoIncidencia,
       jugador_id: cleanJugadorId,
-      jugador_id_secundario: jugadorSecundarioId ? String(jugadorSecundarioId).trim() : undefined,
-      asistencia_id: (asistId || asistenciaId) ? String(asistId || asistenciaId).trim() : undefined,
+      jugador_id_secundario: secundarioFinal,
+      asistencia_id: asistFinal,
       detalle: detalleTexto.trim() || undefined,
       created_at: Date.now()
     };
@@ -429,7 +509,16 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     const nuevasIncs = [nuevaInc, ...incidencias];
     setIncidencias(nuevasIncs);
     recalcularGoles(nuevasIncs);
+
+    // Resetear completamente los estados de modales y asistentes
     setModalIncidenciaAbierto(false);
+    setPasoAsistencia(false);
+    setGoleadorId(null);
+    setAsistenciaId(null);
+    setJugadorSaleId(null);
+    setPasoSustitucion(1);
+    setDetalleTexto('');
+    setMinutoInfoCongelado(null);
 
     // Enviar a API / Storage
     await ApiService.guardarIncidencia(nuevaInc);
@@ -447,9 +536,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   const handleConfirmarFinalizar = async () => {
     finalizadoRef.current = true;
     setCorriendo(false);
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
+    startedAtRef.current = null;
     setFinalizando(true);
     const partidoIdFinalizado = draft.partido.id;
     await ApiService.finalizarPartido(partidoIdFinalizado, agregado1T, agregado2T);
@@ -463,23 +550,33 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     onPartidoFinalizado(partidoIdFinalizado);
   };
 
+  // Ordenar incidencias cronológicamente para reconstruir la secuencia temporal real de eventos
+  const incsCronologicas = useMemo(() => {
+    return [...incidencias].sort((a, b) => {
+      if (a.tiempo !== b.tiempo) return a.tiempo - b.tiempo;
+      if (a.minuto !== b.minuto) return a.minuto - b.minuto;
+      if (a.segundo !== b.segundo) return a.segundo - b.segundo;
+      return (a.created_at || 0) - (b.created_at || 0);
+    });
+  }, [incidencias]);
+
   // Tarjetas acumuladas y expulsiones
   const amarillasPropias = new Map<string, number>();
   const amarillasRivales = new Map<string, number>();
   const expulsadosPropiosIds = new Set<string>();
   const expulsadosRivalesIds = new Set<string>();
 
-  incidencias.forEach(inc => {
+  incsCronologicas.forEach(inc => {
     if (inc.tipo === 'amarilla') {
       if (inc.equipo === 'propio') {
-        amarillasPropias.set(inc.jugador_id, (amarillasPropias.get(inc.jugador_id) || 0) + 1);
+        amarillasPropias.set(inc.jugador_id!, (amarillasPropias.get(inc.jugador_id!) || 0) + 1);
       } else {
         const idR = String(inc.jugador_id);
         amarillasRivales.set(idR, (amarillasRivales.get(idR) || 0) + 1);
       }
     } else if (inc.tipo === 'doble_amarilla' || inc.tipo === 'roja_directa') {
       if (inc.equipo === 'propio') {
-        expulsadosPropiosIds.add(inc.jugador_id);
+        expulsadosPropiosIds.add(inc.jugador_id!);
       } else {
         expulsadosRivalesIds.add(String(inc.jugador_id));
       }
@@ -490,13 +587,16 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   const titulares = draft.convocados.filter(c => c.titular);
   const suplentes = draft.convocados.filter(c => !c.titular);
 
-  // Jugadores que actualmente están en cancha (titulares que no salieron + suplentes que entraron)
+  // Jugadores que actualmente están en cancha (titulares que no salieron + suplentes que entraron + titulares que reingresaron)
   const jugadoresEnCanchaIds = new Set<string>(titulares.map(t => t.jugador_id));
-  incidencias.forEach(inc => {
-    if (inc.tipo === 'cambio' && inc.equipo === 'propio') {
+  const sustitutosMap = new Map<string, string>(); // entraId -> saleId
+
+  incsCronologicas.forEach(inc => {
+    if (inc.tipo === 'cambio' && inc.equipo === 'propio' && inc.jugador_id) {
       jugadoresEnCanchaIds.delete(inc.jugador_id);
       if (inc.jugador_id_secundario) {
         jugadoresEnCanchaIds.add(inc.jugador_id_secundario);
+        sustitutosMap.set(inc.jugador_id_secundario, inc.jugador_id);
       }
     }
   });
@@ -531,32 +631,51 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   const formacionPropiaActual = draft.partido.formacion_propia || StorageService.getFormacionPredeterminada() || '4-3-3';
   const presetP = FORMACIONES_DISPONIBLES[formacionPropiaActual] || FORMACIONES_DISPONIBLES['4-3-3'];
 
-  // Mapear sustituciones para que el ingresante herede el slot táctico del saliente
-  const sustitutosMap = new Map<string, string>(); // entraId -> saleId
-  incidencias.forEach(inc => {
-    if (inc.tipo === 'cambio' && inc.equipo === 'propio' && inc.jugador_id && inc.jugador_id_secundario) {
-      sustitutosMap.set(inc.jugador_id_secundario, inc.jugador_id);
-    }
-  });
-
   const titularesOriginales = draft.convocados.filter(c => c.titular);
 
   const convocadosEnCancha = draft.convocados.filter(c => jugadoresEnCanchaIds.has(c.jugador_id) && !expulsadosPropiosIds.has(c.jugador_id));
   const convocadosEnBanco = draft.convocados.filter(c => jugadoresEnBancoIds.has(c.jugador_id) && !expulsadosPropiosIds.has(c.jugador_id));
 
+  // Asignar slots tácticos sin colisiones para garantizar que todos los jugadores en cancha tengan posición
+  const slotsOcupados = new Set<number>();
   const jugadoresCanchaPropia: JugadorEnCancha[] = convocadosEnCancha.map((c, idx) => {
     const jug = jugadoresMap.get(c.jugador_id);
 
-    // Encontrar slot táctico (0 a 10) en base a la formación activa
+    // 1. Intentar slot original si era titular de inicio
     let slotIdx = titularesOriginales.findIndex(t => t.jugador_id === c.jugador_id);
-    if (slotIdx === -1 && sustitutosMap.has(c.jugador_id)) {
-      const saleId = sustitutosMap.get(c.jugador_id);
-      slotIdx = titularesOriginales.findIndex(t => t.jugador_id === saleId);
+
+    // 2. Si no es titular o su slot está ocupado, rastrear a quién sustituyó
+    if ((slotIdx === -1 || slotsOcupados.has(slotIdx)) && sustitutosMap.has(c.jugador_id)) {
+      let saleId: string | undefined = sustitutosMap.get(c.jugador_id);
+      let saltos = 0;
+      while (saleId && titularesOriginales.findIndex(t => t.jugador_id === saleId) === -1 && saltos < 4) {
+        saleId = sustitutosMap.get(saleId);
+        saltos++;
+      }
+      if (saleId) {
+        const candidateSlot = titularesOriginales.findIndex(t => t.jugador_id === saleId);
+        if (candidateSlot !== -1 && !slotsOcupados.has(candidateSlot)) {
+          slotIdx = candidateSlot;
+        }
+      }
     }
+
+    // 3. Si sigue sin slot libre, tomar el primer slot disponible de presetP
+    if (slotIdx === -1 || slotsOcupados.has(slotIdx) || slotIdx >= presetP.length) {
+      for (let s = 0; s < presetP.length; s++) {
+        if (!slotsOcupados.has(s)) {
+          slotIdx = s;
+          break;
+        }
+      }
+    }
+
+    // 4. Fallback de desborde
     if (slotIdx === -1 || slotIdx >= presetP.length) {
       slotIdx = idx % presetP.length;
     }
 
+    slotsOcupados.add(slotIdx);
     const coords = presetP[slotIdx] || { pos: 'MC', x: 50, y: 50 };
 
     return {
