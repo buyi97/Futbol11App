@@ -5,7 +5,7 @@
  */
 
 import { StorageService } from './storage';
-import { Jugador, Partido, Convocado, RivalJugador, Incidencia, ItemColaSync, SesionAuth, RolUsuario, ClubConfig, AccionDeshacer, Torneo } from '../types';
+import { Jugador, Partido, Convocado, RivalJugador, Incidencia, ItemColaSync, SesionAuth, RolUsuario, ClubConfig, AccionDeshacer, Torneo, TorneoDetalle } from '../types';
 
 export interface ApiResponse<T = any> {
   ok: boolean;
@@ -512,6 +512,34 @@ export const ApiService = {
   },
 
   /**
+   * Guardar datos completos de un torneo (Equipos, Fechas, Base Anual, Goleadores, FairPlay)
+   */
+  async guardarDatosTorneo(torneoId: string, detalle: TorneoDetalle): Promise<ApiResponse<string>> {
+    StorageService.saveTorneoDetalle(torneoId, detalle);
+    const res = await ApiService.request<string>('guardarDatosTorneo', {
+      torneo_id: torneoId,
+      datos: detalle
+    });
+    if (!res.ok && res.offline) {
+      StorageService.agregarAColaSync('guardarTorneo' as any, { torneo_id: torneoId, datos: detalle });
+    }
+    return { ok: true, data: 'Datos de torneo guardados', offline: res.offline };
+  },
+
+  /**
+   * Obtener datos completos de un torneo desde la nube
+   */
+  async getDatosTorneo(torneoId: string): Promise<ApiResponse<TorneoDetalle | null>> {
+    const res = await ApiService.request<TorneoDetalle>('getDatosTorneo', { torneo_id: torneoId });
+    if (res.ok && res.data) {
+      StorageService.saveTorneoDetalle(torneoId, res.data);
+      return { ok: true, data: res.data };
+    }
+    const local = StorageService.getTorneoDetalle(torneoId);
+    return { ok: true, data: local, offline: true };
+  },
+
+  /**
    * Guardar la configuración del club (nombre, colores) en local y en Google Sheets
    */
   async guardarClubConfig(config: ClubConfig): Promise<ApiResponse<ClubConfig>> {
@@ -673,6 +701,7 @@ export const ApiService = {
     // 1. Intentar método en bloque ultra rápido (sincronizarTodo)
     try {
       onProgreso?.('Enviando paquete completo a Google Sheets...', 35);
+      const torneosDetalle = StorageService.getAllTorneosDetalle();
       const resBulk = await ApiService.request('sincronizarTodo', {
         jugadores,
         partidos,
@@ -680,6 +709,7 @@ export const ApiService = {
         rivales,
         incidencias,
         torneos,
+        torneosDetalle,
         clubConfig,
         config: clubConfig
       });
@@ -861,6 +891,13 @@ export const ApiService = {
             if (i && i.id && !mapI.has(i.id)) mapI.set(i.id, i);
           });
           StorageService.saveIncidencias(Array.from(mapI.values()).map(normalizarIncidencia));
+        }
+        if (data.torneosDetalle && typeof data.torneosDetalle === 'object') {
+          Object.keys(data.torneosDetalle).forEach(tId => {
+            if (data.torneosDetalle[tId]) {
+              StorageService.saveTorneoDetalle(tId, data.torneosDetalle[tId]);
+            }
+          });
         }
         if (data.configuracion && typeof data.configuracion === 'object') {
           let titulares = data.configuracion.titularesPredeterminados;

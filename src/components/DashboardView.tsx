@@ -185,7 +185,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               className="w-full sm:w-auto px-4 py-3 bg-[#0f1712] hover:bg-[#243d2c]/40 text-white font-medium text-sm rounded-xl border border-[#243d2c] flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
               <Users className="w-4 h-4 text-[#3ddc84]" />
-              Ver Plantel ({jugadores.filter(j => j.activo).length})
+              Plantel ({jugadores.filter(j => j.activo).length})
+            </button>
+
+            <button
+              id="btn-quick-torneos"
+              onClick={() => setVistaActual('torneos')}
+              className="w-full sm:w-auto px-4 py-3 bg-[#0f1712] hover:bg-[#243d2c]/40 text-white font-medium text-sm rounded-xl border border-[#243d2c] flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <Trophy className="w-4 h-4 text-[#ffb703]" />
+              Torneos & Tabla
             </button>
           </div>
         </div>

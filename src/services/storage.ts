@@ -17,7 +17,8 @@ import {
   ClubConfig,
   Torneo,
   TipoTorneo,
-  AccionDeshacer
+  AccionDeshacer,
+  TorneoDetalle
 } from '../types';
 import {
   JUGADORES_INICIALES,
@@ -26,6 +27,7 @@ import {
   RIVALES_INICIALES,
   INCIDENCIAS_INICIALES
 } from '../data/mockData';
+import { MOCK_TORNEO_APERTURA_2026 } from '../data/mockTorneos';
 import { DEFAULT_APPS_SCRIPT_URL } from '../config';
 
 const KEYS = {
@@ -41,6 +43,7 @@ const KEYS = {
   CONFIG: 'futbol11_config',
   CLUB_CONFIG: 'futbol11_club_config',
   TORNEOS: 'futbol11_torneos',
+  TORNEO_DETALLE_PREFIX: 'futbol11_torneo_detalle_',
   SEEDED: 'futbol11_datos_inicializados_v1',
   MEMORIA_DESHACER: 'futbol11_memoria_deshacer'
 };
@@ -791,9 +794,109 @@ export const StorageService = {
       this.clearPartidoEnVivo();
     }
 
+    try {
+      localStorage.removeItem(KEYS.TORNEO_DETALLE_PREFIX + id);
+    } catch {}
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('futbol11-datos-actualizados'));
     }
+  },
+
+  // --- Datos Completos del Torneo (Equipos, Fechas, Base Anual, Goleadores, FairPlay) ---
+  getTorneoDetalle(torneoId: string): TorneoDetalle {
+    const nombrePropio = this.getNombreEquipo();
+    try {
+      const data = localStorage.getItem(KEYS.TORNEO_DETALLE_PREFIX + torneoId);
+      if (data) {
+        const parsed: TorneoDetalle = JSON.parse(data);
+        if (parsed && Array.isArray(parsed.equipos)) {
+          // Asegurar que el equipo propio esté en la lista
+          if (!parsed.equipos.some(e => e.toLowerCase() === nombrePropio.toLowerCase())) {
+            parsed.equipos.unshift(nombrePropio);
+          }
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading torneo detalle from storage:', e);
+    }
+
+    // Si es el torneo mock de Apertura 2026, inicializar con mock rico
+    if (torneoId === 'torneo-apertura-2026') {
+      const mock = JSON.parse(JSON.stringify(MOCK_TORNEO_APERTURA_2026));
+      this.saveTorneoDetalle(torneoId, mock);
+      return mock;
+    }
+
+    // Plantilla inicial para cualquier nuevo torneo
+    const plantilla: TorneoDetalle = {
+      torneoId,
+      equipos: [
+        nombrePropio,
+        'Deportivo Central',
+        'Atlético San Martín',
+        'Sportivo Belgrano',
+        'Juventud Unida',
+        'Defensores del Norte'
+      ],
+      fechaProximaNumero: 1,
+      fechas: [
+        {
+          numero: 1,
+          nombre: 'Fecha 1',
+          estado: 'proxima',
+          esProxima: true,
+          partidos: [
+            {
+              id: `f1-p1-${Date.now()}`,
+              equipoLocal: nombrePropio,
+              equipoVisitante: 'Deportivo Central',
+              golesLocal: null,
+              golesVisitante: null,
+              jugado: false,
+              fechaHora: 'Por programar',
+              cancha: 'Cancha Principal'
+            }
+          ]
+        }
+      ],
+      tablaAnualBase: {},
+      goleadores: [],
+      fairPlay: {
+        [nombrePropio]: 0
+      }
+    };
+
+    this.saveTorneoDetalle(torneoId, plantilla);
+    return plantilla;
+  },
+
+  saveTorneoDetalle(torneoId: string, detalle: TorneoDetalle): void {
+    try {
+      const nombrePropio = this.getNombreEquipo();
+      // Garantizar siempre que el equipo propio esté incluido en los equipos
+      if (!detalle.equipos.some(e => e.toLowerCase() === nombrePropio.toLowerCase())) {
+        detalle.equipos.unshift(nombrePropio);
+      }
+      localStorage.setItem(KEYS.TORNEO_DETALLE_PREFIX + torneoId, JSON.stringify(detalle));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('futbol11-torneo-detalle-actualizado', { detail: { torneoId, detalle } }));
+      }
+    } catch (e) {
+      console.error('Error saving torneo detalle:', e);
+    }
+  },
+
+  getAllTorneosDetalle(): Record<string, TorneoDetalle> {
+    const res: Record<string, TorneoDetalle> = {};
+    const torneos = this.getTorneos();
+    torneos.forEach(t => {
+      if (t && t.id) {
+        res[t.id] = this.getTorneoDetalle(t.id);
+      }
+    });
+    return res;
   },
 
   // --- Memoria para Deshacer (Undo múltiple) ---

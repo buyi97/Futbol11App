@@ -18,7 +18,8 @@ import {
   WifiOff, 
   RefreshCw,
   LogOut,
-  UserCheck
+  UserCheck,
+  Trophy
 } from 'lucide-react';
 import { RolUsuario } from '../types';
 import { SoccerBallLogo } from './SoccerBallLogo';
@@ -30,6 +31,7 @@ export type VistaActual =
   | 'nuevo-partido' 
   | 'partido-vivo' 
   | 'historial' 
+  | 'torneos'
   | 'partido-detalle' 
   | 'estadisticas' 
   | 'configuracion';
@@ -184,6 +186,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
+              id="nav-btn-torneos"
+              onClick={() => setVistaActual('torneos')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                vistaActual === 'torneos'
+                  ? 'bg-[#182a1f] text-[#3ddc84] border border-[#2bb46a]/30'
+                  : 'text-[#9aa89f] hover:text-white hover:bg-[#182a1f]/60'
+              }`}
+            >
+              <Trophy className="w-4 h-4" />
+              Torneos
+            </button>
+
+            <button
               id="nav-btn-stats"
               onClick={() => setVistaActual('estadisticas')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
@@ -335,6 +350,16 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <Calendar className="w-4 h-4" />
           <span>Partidos</span>
+        </button>
+
+        <button
+          onClick={() => setVistaActual('torneos')}
+          className={`flex flex-col items-center gap-1 p-1.5 rounded-lg text-[11px] font-medium transition-all ${
+            vistaActual === 'torneos' ? 'text-[#3ddc84]' : 'text-[#9aa89f]'
+          }`}
+        >
+          <Trophy className="w-4 h-4" />
+          <span>Torneos</span>
         </button>
 
         <button

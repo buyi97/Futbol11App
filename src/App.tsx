@@ -14,6 +14,7 @@ import { PartidoVivoView } from './components/PartidoVivoView';
 import { HistorialView } from './components/HistorialView';
 import { PartidoDetalleView } from './components/PartidoDetalleView';
 import { EstadisticasView } from './components/EstadisticasView';
+import { TorneosView } from './components/TorneosView';
 import { ConfiguracionView } from './components/ConfiguracionView';
 import { FloatingUndoNotification } from './components/FloatingUndoNotification';
 
@@ -370,7 +371,20 @@ export default function App() {
           />
         )}
 
-        {/* VISTA 8: CONFIGURACIÓN & GOOGLE SHEETS */}
+        {/* VISTA 8: TORNEOS, TABLA ACTUAL, ANUAL, FECHAS, GOLEADORES Y FAIR PLAY */}
+        {vistaActual === 'torneos' && (
+          <TorneosView
+            rol={sesion.rol}
+            nombreEquipo={nombreEquipo}
+            colorPropio={colorPropio}
+            partidos={partidos}
+            jugadores={plantel}
+            incidencias={incidencias}
+            onActualizarDatos={cargarDatosLocales}
+          />
+        )}
+
+        {/* VISTA 9: CONFIGURACIÓN & GOOGLE SHEETS */}
         {vistaActual === 'configuracion' && (
           <ConfiguracionView
             rol={sesion.rol}

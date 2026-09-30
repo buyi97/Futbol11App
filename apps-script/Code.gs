@@ -124,7 +124,8 @@ function doPost(e) {
       'guardarConfiguracion',
       'guardarClubConfig',
       'guardarTorneo',
-      'eliminarTorneo'
+      'eliminarTorneo',
+      'guardarDatosTorneo'
     ].indexOf(action) !== -1;
 
     if (requiereEditor && rol !== 'editor') {
@@ -515,6 +516,45 @@ function doPost(e) {
       return jsonResponse_({ ok: true, data: sheetTorneos ? getSheetObjects_(sheetTorneos) : [] });
     }
 
+    // Endpoint: GUARDAR DATOS DETALLADOS DE UN TORNEO (Equipos, Fechas, Base Anual, Goleadores, FairPlay)
+    if (action === 'guardarDatosTorneo') {
+      const tId = body.torneo_id || (body.datos && body.datos.torneoId);
+      const datos = body.datos;
+      if (!tId || !datos) return jsonResponse_({ ok: false, error: 'Falta torneo_id o datos' });
+
+      const sheetDetalle = getOrCreateSheet_(ss, 'TorneosDetalle', ['torneo_id', 'datos_json', 'ultima_actualizacion']);
+      const rowIdx = findRowIndexById_(sheetDetalle, tId);
+      const rowData = [
+        tId,
+        typeof datos === 'string' ? datos : JSON.stringify(datos),
+        new Date().toISOString()
+      ];
+
+      if (rowIdx > 0) {
+        sheetDetalle.getRange(rowIdx, 1, 1, rowData.length).setValues([rowData]);
+      } else {
+        sheetDetalle.appendRow(rowData);
+      }
+      return jsonResponse_({ ok: true, data: 'Datos de torneo guardados con éxito' });
+    }
+
+    // Endpoint: OBTENER DATOS DETALLADOS DE UN TORNEO
+    if (action === 'getDatosTorneo') {
+      const tId = body.torneo_id;
+      if (!tId) return jsonResponse_({ ok: false, error: 'Falta torneo_id' });
+      const sheetDetalle = ss.getSheetByName('TorneosDetalle');
+      if (!sheetDetalle) return jsonResponse_({ ok: true, data: null });
+      const rows = getSheetObjects_(sheetDetalle);
+      const item = rows.find(r => r.torneo_id === tId);
+      if (!item || !item.datos_json) return jsonResponse_({ ok: true, data: null });
+      try {
+        const parsed = JSON.parse(item.datos_json);
+        return jsonResponse_({ ok: true, data: parsed });
+      } catch (e) {
+        return jsonResponse_({ ok: true, data: null });
+      }
+    }
+
     // 6. Endpoint: SINCRONIZACIÓN COMPLETA (Batch / Lote de toda la base local)
     if (action === 'sincronizarTodo' || action === 'sincronizarBaseCompleta') {
       const jugadores = body.jugadores || body.plantel || [];
@@ -698,6 +738,35 @@ function doPost(e) {
         });
       }
 
+      // 8. Guardar Detalles de Torneos si vienen en el payload
+      const torneosDetalle = body.torneosDetalle || body.torneoDatos;
+      let countDetalles = 0;
+      if (torneosDetalle && typeof torneosDetalle === 'object') {
+        const sheetDetalle = getOrCreateSheet_(ss, 'TorneosDetalle', ['torneo_id', 'datos_json', 'ultima_actualizacion']);
+        const listaDetalles = Array.isArray(torneosDetalle) 
+          ? torneosDetalle 
+          : Object.keys(torneosDetalle).map(function(k) { return { torneo_id: k, datos: torneosDetalle[k] }; });
+
+        listaDetalles.forEach(function(item) {
+          const tId = item.torneo_id || (item.datos && item.datos.torneoId) || item.torneoId;
+          const datos = item.datos || item;
+          if (tId && datos) {
+            const rowIdx = findRowIndexById_(sheetDetalle, tId);
+            const rowData = [
+              tId,
+              typeof datos === 'string' ? datos : JSON.stringify(datos),
+              new Date().toISOString()
+            ];
+            if (rowIdx > 0) {
+              sheetDetalle.getRange(rowIdx, 1, 1, rowData.length).setValues([rowData]);
+            } else {
+              sheetDetalle.appendRow(rowData);
+            }
+            countDetalles++;
+          }
+        });
+      }
+
       return jsonResponse_({
         ok: true,
         data: {
@@ -708,6 +777,7 @@ function doPost(e) {
           rivales: countRiv,
           incidencias: countInc,
           torneos: countTorneos,
+          torneosDetalle: countDetalles,
           timestamp: new Date().toISOString()
         }
       });
@@ -722,6 +792,7 @@ function doPost(e) {
       const sheetInc = ss.getSheetByName('Incidencias');
       const sheetTorneos = ss.getSheetByName('Torneos');
       const sheetConf = ss.getSheetByName('Config');
+      const sheetDetalle = ss.getSheetByName('TorneosDetalle');
 
       let configObj = null;
       if (sheetConf) {
@@ -752,6 +823,18 @@ function doPost(e) {
         }
       }
 
+      const torneosDetalleMap = {};
+      if (sheetDetalle) {
+        const rowsDetalle = getSheetObjects_(sheetDetalle);
+        rowsDetalle.forEach(function(r) {
+          if (r.torneo_id && r.datos_json) {
+            try {
+              torneosDetalleMap[r.torneo_id] = JSON.parse(r.datos_json);
+            } catch(e) {}
+          }
+        });
+      }
+
       return jsonResponse_({
         ok: true,
         data: {
@@ -761,6 +844,7 @@ function doPost(e) {
           rivales: sheetRiv ? getSheetObjects_(sheetRiv) : [],
           incidencias: sheetInc ? getSheetObjects_(sheetInc) : [],
           torneos: sheetTorneos ? getSheetObjects_(sheetTorneos) : [],
+          torneosDetalle: torneosDetalleMap,
           configuracion: configObj
         }
       });
@@ -818,6 +902,7 @@ function inicializarEstructura_(ss) {
     'equipo', 'jugador_id', 'jugador_id_secundario', 'detalle'
   ]);
   const sheetTorneos = getOrCreateSheet_(ss, 'Torneos', ['id', 'nombre', 'tipo', 'anio', 'estado', 'fechaInicio', 'fechaCierre', 'descripcion']);
+  getOrCreateSheet_(ss, 'TorneosDetalle', ['torneo_id', 'datos_json', 'ultima_actualizacion']);
   getOrCreateSheet_(ss, 'Config', ['clave', 'valor']);
 
   // Asegurar que exista al menos el Torneo por defecto "Amistosos"

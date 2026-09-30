@@ -33,6 +33,95 @@ export interface Torneo {
   descripcion?: string;
 }
 
+export interface PartidoTorneoFecha {
+  id: string;
+  equipoLocal: string;
+  equipoVisitante: string;
+  golesLocal: number | null;
+  golesVisitante: number | null;
+  jugado: boolean;
+  fechaHora?: string;
+  cancha?: string;
+  partidoAppId?: string; // id del partido en el historial de la app si fue jugado por nuestro equipo
+}
+
+export interface FechaTorneo {
+  numero: number;
+  nombre?: string; // ej: "Fecha 1"
+  estado?: 'jugada' | 'proxima' | 'pendiente';
+  esProxima?: boolean;
+  partidos: PartidoTorneoFecha[];
+}
+
+export interface TablaAnualBaseEquipo {
+  equipo: string;
+  pj: number;
+  pg: number;
+  pe: number;
+  pp: number;
+  gf: number;
+  gc: number;
+  puntos: number;
+}
+
+export interface GoleadorTorneo {
+  id: string;
+  nombre: string;
+  equipo: string;
+  goles: number;
+  jugadorAppId?: string;
+}
+
+export interface TorneoDetalle {
+  torneoId: string;
+  equipos: string[]; // Nombres de los equipos participantes (incluye propio)
+  fechas: FechaTorneo[];
+  tablaAnualBase: Record<string, TablaAnualBaseEquipo>; // Datos base para la tabla anual
+  goleadores: GoleadorTorneo[];
+  fairPlay: Record<string, number>; // equipo -> puntos fair play (con soporte de decimales)
+  fechaProximaNumero?: number; // Número de fecha destacada como "Próxima"
+}
+
+export interface EstadisticasEquipoTorneo {
+  equipo: string;
+  posicion: number;
+  puntos: number;
+  pj: number;
+  pg: number;
+  pe: number;
+  pp: number;
+  gf: number;
+  gc: number;
+  dg: number;
+}
+
+export interface FichaEquipoData {
+  equipo: string;
+  esPropio: boolean;
+  // Torneo Actual
+  actual: EstadisticasEquipoTorneo;
+  puntosFairPlay: number;
+  posicionFairPlay: number;
+  // Tabla Anual
+  anual: EstadisticasEquipoTorneo;
+  // Historial de partidos en este torneo
+  partidos: {
+    partidoId: string;
+    fechaNumero: number;
+    fechaNombre: string;
+    rival: string;
+    esLocal: boolean;
+    golesFavor: number | null;
+    golesContra: number | null;
+    resultado: 'V' | 'E' | 'D' | 'P'; // Victoria, Empate, Derrota, Pendiente
+    jugado: boolean;
+    fechaHora?: string;
+    cancha?: string;
+  }[];
+  // Goleadores del equipo en este torneo
+  goleadores: GoleadorTorneo[];
+}
+
 export interface ClubConfig {
   nombre: string; // Nombre del equipo (default: 'Los Halcones FC')
   colorPropio: string; // Color hexadecimal principal del equipo (default: '#3ddc84')
