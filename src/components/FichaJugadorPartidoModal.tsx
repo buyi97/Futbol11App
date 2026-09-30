@@ -45,13 +45,14 @@ export const FichaJugadorPartidoModal: React.FC<FichaJugadorPartidoModalProps> =
     ? Math.min(100, Math.round((detalle.minutosJugados / duracionTotalMin) * 100))
     : 0;
 
-  // Filtrar incidencias de este jugador en el partido (goles, asistencias, disparos, faltas, tarjetas, cambios)
+  // Filtrar incidencias de este jugador en el partido (goles, asistencias, disparos, faltas, tarjetas, cambios, atajadas)
   const incidenciasDelJugador = incidencias.filter(inc => {
     const esPrincipal = inc.jugador_id === jugador.id;
     const asistId = inc.asistencia_id || (inc.tipo === 'gol' ? inc.jugador_id_secundario : undefined);
     const esAsistente = inc.tipo === 'gol' && asistId === jugador.id;
     const esSecundarioCambio = inc.tipo === 'cambio' && inc.jugador_id_secundario === jugador.id;
-    return esPrincipal || esAsistente || esSecundarioCambio;
+    const esAtajadaArquero = (jugador.posicion === 'Arquero' || conv?.posicion_tactica === 'ARQ') && inc.equipo === 'rival' && inc.tipo === 'tiro_arco';
+    return esPrincipal || esAsistente || esSecundarioCambio || esAtajadaArquero;
   }).sort((a, b) => {
     if (a.tiempo !== b.tiempo) return a.tiempo - b.tiempo;
     if (a.minuto !== b.minuto) return a.minuto - b.minuto;
@@ -209,9 +210,14 @@ export const FichaJugadorPartidoModal: React.FC<FichaJugadorPartidoModalProps> =
                 <span className="font-display font-bold text-lg text-white block mt-0.5">
                   {detalle.goles}
                 </span>
-                <span className="text-[10px] text-[#9aa89f] uppercase font-semibold">
+                <span className="text-[10px] text-[#9aa89f] uppercase font-semibold block leading-tight">
                   Goles
                 </span>
+                {detalle.golesPenal && detalle.golesPenal > 0 ? (
+                  <span className="text-[9px] text-[#ffb703] font-bold block mt-0.5">
+                    ({detalle.golesPenal} penal)
+                  </span>
+                ) : null}
               </div>
 
               {/* Asistencias */}
@@ -225,16 +231,28 @@ export const FichaJugadorPartidoModal: React.FC<FichaJugadorPartidoModalProps> =
                 </span>
               </div>
 
-              {/* Tiros al Arco */}
-              <div className="p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] text-center">
-                <span className="text-sm block">🎯</span>
-                <span className="font-display font-bold text-lg text-white block mt-0.5">
-                  {detalle.tirosArco}
-                </span>
-                <span className="text-[10px] text-[#9aa89f] uppercase font-semibold">
-                  Al Arco
-                </span>
-              </div>
+              {/* Tiros al Arco / Atajadas */}
+              {(jugador.posicion === 'Arquero' || (detalle.atajadas || 0) > 0) ? (
+                <div className="p-2.5 rounded-xl bg-[#0f1712] border border-[#3ddc84]/40 text-center">
+                  <span className="text-sm block">🧤</span>
+                  <span className="font-display font-bold text-lg text-[#3ddc84] block mt-0.5">
+                    {detalle.atajadas || 0}
+                  </span>
+                  <span className="text-[10px] text-[#3ddc84] uppercase font-semibold">
+                    Atajadas
+                  </span>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] text-center">
+                  <span className="text-sm block">🎯</span>
+                  <span className="font-display font-bold text-lg text-white block mt-0.5">
+                    {detalle.tirosArco}
+                  </span>
+                  <span className="text-[10px] text-[#9aa89f] uppercase font-semibold">
+                    Al Arco
+                  </span>
+                </div>
+              )}
 
               {/* Tiros Totales */}
               <div className="p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] text-center">
@@ -308,18 +326,22 @@ export const FichaJugadorPartidoModal: React.FC<FichaJugadorPartidoModalProps> =
                   const esAsistenciaPropia = inc.tipo === 'gol' && asistId === jugador.id;
                   const esCambioEntra = inc.tipo === 'cambio' && inc.jugador_id_secundario === jugador.id;
                   const esCambioSale = inc.tipo === 'cambio' && inc.jugador_id === jugador.id;
+                  const esAtajada = (jugador.posicion === 'Arquero' || conv?.posicion_tactica === 'ARQ') && inc.equipo === 'rival' && inc.tipo === 'tiro_arco';
 
                   let icono = '⚽';
                   let titulo = '';
                   let subtitulo = '';
 
                   if (esGolPropio) {
-                    icono = '⚽';
-                    titulo = 'GOL MARCADO';
-                    if (asistId) {
+                    const esPenal = inc.es_penal || inc.detalle?.toLowerCase().includes('penal');
+                    icono = esPenal ? '🎯⚽' : '⚽';
+                    titulo = esPenal ? 'GOL DE PENAL' : 'GOL MARCADO';
+                    if (asistId && !esPenal) {
                       const asisJug = jugadoresMap.get(asistId);
                       const asisConv = convocadosMap.get(asistId);
                       subtitulo = `Asistencia de #${asisConv?.numero || asisJug?.numero || ''} ${asisJug?.nombre || 'Compañero'}`;
+                    } else if (esPenal) {
+                      subtitulo = inc.detalle ? `${inc.detalle} • Ejecución de penal` : 'Tiro desde el punto penal';
                     } else {
                       subtitulo = 'Jugada individual / Sin asistencia';
                     }
@@ -329,6 +351,10 @@ export const FichaJugadorPartidoModal: React.FC<FichaJugadorPartidoModalProps> =
                     const golJug = jugadoresMap.get(inc.jugador_id || '');
                     const golConv = convocadosMap.get(inc.jugador_id || '');
                     subtitulo = `Para el gol de #${golConv?.numero || golJug?.numero || ''} ${golJug?.nombre || 'Compañero'}`;
+                  } else if (esAtajada) {
+                    icono = '🧤';
+                    titulo = 'ATAJADA';
+                    subtitulo = `Contuvo remate al arco rival ${inc.detalle ? `• ${inc.detalle}` : ''}`;
                   } else if (inc.tipo === 'tiro_arco') {
                     icono = '🎯';
                     titulo = 'Tiro al Arco';

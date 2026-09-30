@@ -23,6 +23,7 @@ import {
   ArrowRightLeft, 
   Undo2, 
   Trash2, 
+  Edit3,
   CheckCircle, 
   CheckCircle2,
   AlertTriangle, 
@@ -126,10 +127,36 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   const [pasoSustitucion, setPasoSustitucion] = useState<1 | 2>(1);
   const [jugadorSaleId, setJugadorSaleId] = useState<string | null>(null);
 
+  // Para subtipos de gol en vivo (jugada, penal, autogol)
+  const [subtipoGol, setSubtipoGol] = useState<'jugada' | 'penal' | 'autogol'>('jugada');
+
   // Para asistencias en goles
   const [pasoAsistencia, setPasoAsistencia] = useState(false);
   const [goleadorId, setGoleadorId] = useState<string | null>(null);
   const [asistenciaId, setAsistenciaId] = useState<string | null>(null);
+
+  // Paso final de comentario / confirmación de incidencia en vivo
+  const [pasoComentario, setPasoComentario] = useState(false);
+  const [pendienteConfirmacion, setPendienteConfirmacion] = useState<{
+    tipo: TipoIncidencia;
+    equipo: EquipoIncidencia;
+    jugadorId: string;
+    jugadorSecundarioId?: string;
+    asistenciaId?: string;
+    esPenal?: boolean;
+  } | null>(null);
+
+  // Modal para editar incidencia en vivo
+  const [modalEditarIncidenciaVivo, setModalEditarIncidenciaVivo] = useState(false);
+  const [incidenciaEditandoVivo, setIncidenciaEditandoVivo] = useState<Incidencia | null>(null);
+  const [editMinutoVivo, setEditMinutoVivo] = useState(1);
+  const [editTiempoVivo, setEditTiempoVivo] = useState<1 | 2>(1);
+  const [editTipoVivo, setEditTipoVivo] = useState<TipoIncidencia>('gol');
+  const [editEsPenalVivo, setEditEsPenalVivo] = useState(false);
+  const [editEquipoVivo, setEditEquipoVivo] = useState<EquipoIncidencia>('propio');
+  const [editJugadorIdVivo, setEditJugadorIdVivo] = useState('');
+  const [editJugadorSecundarioIdVivo, setEditJugadorSecundarioIdVivo] = useState('');
+  const [editDetalleVivo, setEditDetalleVivo] = useState('');
 
   // Modal tiempo agregado
   const [modalAgregadoAbierto, setModalAgregadoAbierto] = useState(false);
@@ -428,6 +455,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     }
 
     setTipoSeleccionado(tipo);
+    setSubtipoGol(tipo === 'autogol' ? 'autogol' : 'jugada');
     setEquipoIncidencia('propio');
     setFiltroBuscador('');
     setDetalleTexto('');
@@ -436,6 +464,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     setPasoAsistencia(false);
     setGoleadorId(null);
     setAsistenciaId(null);
+    setPasoComentario(false);
+    setPendienteConfirmacion(null);
     setModalIncidenciaAbierto(true);
   };
 
@@ -465,22 +495,18 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     await ApiService.guardarIncidencia(nuevaInc);
   };
 
-  // Guardar Incidencia con jugador y opcional asistencia/secundario
-  const confirmarGuardadoIncidencia = async (
+  // Avanza al paso final de confirmación con campo de comentario para cualquier incidencia
+  const avanzarAPasoComentario = (
     jugadorId: string, 
     jugadorSecundarioId?: string,
     asistId?: string
   ) => {
     if (!tipoSeleccionado || !draft) return;
 
-    // Sincronizar el reloj antes de calcular el minuto
-    sincronizarReloj();
-    const minInfo = minutoInfoCongelado || calcularMinutoDisplay(segundosTotales, tiempo, duracionReglamentariaMin);
     const cleanJugadorId = typeof jugadorId === 'object' && jugadorId !== null 
       ? ((jugadorId as any).id || String((jugadorId as any).numero)) 
       : String(jugadorId || '').trim();
 
-    // Si es gol, la asistencia debe asignarse inequívocamente tanto a asistencia_id como a jugador_id_secundario
     const asistFinal = (tipoSeleccionado === 'gol' && (asistId || asistenciaId || jugadorSecundarioId))
       ? String(asistId || asistenciaId || jugadorSecundarioId).trim()
       : undefined;
@@ -488,6 +514,24 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     const secundarioFinal = tipoSeleccionado === 'gol'
       ? asistFinal
       : (jugadorSecundarioId ? String(jugadorSecundarioId).trim() : undefined);
+
+    setPendienteConfirmacion({
+      tipo: tipoSeleccionado,
+      equipo: equipoIncidencia,
+      jugadorId: cleanJugadorId,
+      jugadorSecundarioId: secundarioFinal,
+      asistenciaId: asistFinal,
+      esPenal: tipoSeleccionado === 'gol' && subtipoGol === 'penal'
+    });
+    setPasoComentario(true);
+  };
+
+  // Guardar Incidencia confirmada finalmente con comentario opcional
+  const ejecutarGuardadoFinal = async () => {
+    if (!pendienteConfirmacion || !draft) return;
+
+    sincronizarReloj();
+    const minInfo = minutoInfoCongelado || calcularMinutoDisplay(segundosTotales, tiempo, duracionReglamentariaMin);
 
     const nuevaInc: Incidencia = {
       id: 'inc-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
@@ -497,11 +541,12 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
       segundo: minInfo.segundo,
       minuto_display: minInfo.display,
       minuto_agregado: minInfo.esAgregado ? minInfo.minutoExtra : undefined,
-      tipo: tipoSeleccionado,
-      equipo: equipoIncidencia,
-      jugador_id: cleanJugadorId,
-      jugador_id_secundario: secundarioFinal,
-      asistencia_id: asistFinal,
+      tipo: pendienteConfirmacion.tipo,
+      es_penal: pendienteConfirmacion.tipo === 'gol' ? pendienteConfirmacion.esPenal : undefined,
+      equipo: pendienteConfirmacion.equipo,
+      jugador_id: pendienteConfirmacion.jugadorId,
+      jugador_id_secundario: pendienteConfirmacion.jugadorSecundarioId,
+      asistencia_id: pendienteConfirmacion.asistenciaId,
       detalle: detalleTexto.trim() || undefined,
       created_at: Date.now()
     };
@@ -512,6 +557,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
     // Resetear completamente los estados de modales y asistentes
     setModalIncidenciaAbierto(false);
+    setPasoComentario(false);
+    setPendienteConfirmacion(null);
     setPasoAsistencia(false);
     setGoleadorId(null);
     setAsistenciaId(null);
@@ -522,6 +569,68 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
     // Enviar a API / Storage
     await ApiService.guardarIncidencia(nuevaInc);
+  };
+
+  // Fallback directo si alguna función invoca el guardado directo
+  const confirmarGuardadoIncidencia = async (
+    jugadorId: string, 
+    jugadorSecundarioId?: string,
+    asistId?: string
+  ) => {
+    avanzarAPasoComentario(jugadorId, jugadorSecundarioId, asistId);
+  };
+
+  // Abrir modal de edición de incidencia en vivo
+  const handleAbrirEditarIncidenciaVivo = (inc: Incidencia) => {
+    setIncidenciaEditandoVivo(inc);
+    setEditMinutoVivo(inc.minuto);
+    setEditTiempoVivo(inc.tiempo as 1 | 2);
+    setEditTipoVivo(inc.tipo);
+    setEditEsPenalVivo(!!(inc.es_penal || inc.detalle?.toLowerCase().includes('penal')));
+    setEditEquipoVivo(inc.equipo);
+    setEditJugadorIdVivo(inc.jugador_id || '');
+    setEditJugadorSecundarioIdVivo(inc.asistencia_id || inc.jugador_id_secundario || '');
+    setEditDetalleVivo(inc.detalle || '');
+    setModalEditarIncidenciaVivo(true);
+  };
+
+  // Guardar edición de incidencia en vivo
+  const handleGuardarEdicionVivo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!incidenciaEditandoVivo || !draft) return;
+
+    const actualizadas = incidencias.map(i => {
+      if (i.id === incidenciaEditandoVivo.id) {
+        return {
+          ...i,
+          tiempo: editTiempoVivo,
+          minuto: editMinutoVivo,
+          minuto_display: `${editMinutoVivo}'`,
+          tipo: editTipoVivo,
+          es_penal: editTipoVivo === 'gol' ? editEsPenalVivo : undefined,
+          equipo: editEquipoVivo,
+          jugador_id: editJugadorIdVivo,
+          jugador_id_secundario: editJugadorSecundarioIdVivo || undefined,
+          asistencia_id: editTipoVivo === 'gol' ? (editJugadorSecundarioIdVivo || undefined) : undefined,
+          detalle: editDetalleVivo.trim() || undefined
+        };
+      }
+      return i;
+    });
+
+    setIncidencias(actualizadas);
+    recalcularGoles(actualizadas);
+
+    const incActualizada = actualizadas.find(i => i.id === incidenciaEditandoVivo.id);
+    if (incActualizada) {
+      const list = StorageService.getIncidencias().filter(i => i.id !== incActualizada.id);
+      list.push(incActualizada);
+      StorageService.saveIncidencias(list);
+      await ApiService.guardarIncidencia(incActualizada);
+    }
+
+    setModalEditarIncidenciaVivo(false);
+    setIncidenciaEditandoVivo(null);
   };
 
   // Deshacer / Eliminar incidencia
@@ -737,6 +846,63 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     esRival: true,
     titular: false
   }));
+
+  const convocadoPrincipal = pendienteConfirmacion && pendienteConfirmacion.equipo === 'propio'
+    ? draft.convocados.find(c => c.jugador_id === pendienteConfirmacion.jugadorId)
+    : null;
+  const jugPrincipal = pendienteConfirmacion && pendienteConfirmacion.equipo === 'propio'
+    ? jugadoresMap.get(pendienteConfirmacion.jugadorId)
+    : null;
+  const convocadoAsist = pendienteConfirmacion && pendienteConfirmacion.asistenciaId
+    ? draft.convocados.find(c => c.jugador_id === pendienteConfirmacion.asistenciaId)
+    : null;
+  const jugAsist = pendienteConfirmacion && pendienteConfirmacion.asistenciaId
+    ? jugadoresMap.get(pendienteConfirmacion.asistenciaId)
+    : null;
+  const convocadoSale = pendienteConfirmacion && pendienteConfirmacion.tipo === 'cambio'
+    ? draft.convocados.find(c => c.jugador_id === pendienteConfirmacion.jugadorId)
+    : null;
+  const jugSale = pendienteConfirmacion && pendienteConfirmacion.tipo === 'cambio'
+    ? jugadoresMap.get(pendienteConfirmacion.jugadorId)
+    : null;
+  const convocadoEntra = pendienteConfirmacion && pendienteConfirmacion.tipo === 'cambio' && pendienteConfirmacion.jugadorSecundarioId
+    ? draft.convocados.find(c => c.jugador_id === pendienteConfirmacion.jugadorSecundarioId)
+    : null;
+  const jugEntra = pendienteConfirmacion && pendienteConfirmacion.tipo === 'cambio' && pendienteConfirmacion.jugadorSecundarioId
+    ? jugadoresMap.get(pendienteConfirmacion.jugadorSecundarioId)
+    : null;
+  const rivalPrincipal = pendienteConfirmacion && pendienteConfirmacion.equipo === 'rival'
+    ? draft.rivales.find(r => String(r.numero) === String(pendienteConfirmacion.jugadorId) || r.id === pendienteConfirmacion.jugadorId)
+    : null;
+
+  const sugerenciasRapidas = (() => {
+    if (!pendienteConfirmacion) return [];
+    if (pendienteConfirmacion.tipo === 'gol') {
+      if (pendienteConfirmacion.esPenal) {
+        return ['A la derecha', 'A la izquierda', 'Al medio', 'A lo Panenka', 'Fuerte cruzado'];
+      }
+      return ['De cabeza', 'Tiro libre', 'Gran jugada', 'De rebote', 'De volea', 'Pase filtrado', 'Mano a mano'];
+    }
+    if (pendienteConfirmacion.tipo === 'autogol') {
+      return ['Desvío desafortunado', 'Mala entrega', 'Rebote en córner'];
+    }
+    if (pendienteConfirmacion.tipo === 'cambio') {
+      return ['Por lesión', 'Cambio táctico', 'Cansancio', 'Molestia muscular'];
+    }
+    if (pendienteConfirmacion.tipo === 'amarilla' || pendienteConfirmacion.tipo === 'doble_amarilla' || pendienteConfirmacion.tipo === 'roja_directa') {
+      return ['Falta táctica', 'Protesta', 'Reiteración', 'Juego brusco', 'Mano', 'Agarrón'];
+    }
+    if (pendienteConfirmacion.tipo === 'tiro_arco') {
+      return ['Tiro libre', 'Remate lejano', 'Mano a mano', 'Cabezazo'];
+    }
+    if (pendienteConfirmacion.tipo === 'tiro') {
+      return ['Palo', 'Travesaño', 'Desviado', 'Por arriba'];
+    }
+    if (pendienteConfirmacion.tipo === 'falta') {
+      return ['Falta común', 'Peligrosa', 'Táctica', 'Mano'];
+    }
+    return [];
+  })();
 
   return (
     <div className="space-y-4 pb-20 max-w-4xl mx-auto">
@@ -1094,6 +1260,9 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
               const asistObj = inc.asistencia_id ? jugadoresMap.get(inc.asistencia_id) : null;
               const convocadoAsist = inc.asistencia_id ? draft.convocados.find(c => c.jugador_id === inc.asistencia_id) : null;
               const rivalObj = draft.rivales.find(r => String(r.numero) === String(inc.jugador_id) || r.id === inc.jugador_id);
+              const esAutogol = inc.tipo === 'autogol';
+              const esPropioEfectivo = esAutogol ? inc.equipo !== 'propio' : inc.equipo === 'propio';
+              const esPenal = inc.tipo === 'gol' && (inc.es_penal || inc.detalle?.toLowerCase().includes('penal'));
               const esPropio = inc.equipo === 'propio';
               const minutoTxt = formatearMinutoIncidencia(inc, duracionReglamentariaMin);
 
@@ -1107,7 +1276,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                     <div className="w-16 text-center shrink-0">
                       <span 
                         className="font-display font-bold text-sm"
-                        style={{ color: esPropio ? colorClub : colorRivalConfig }}
+                        style={{ color: esPropioEfectivo ? colorClub : colorRivalConfig }}
                       >
                         {minutoTxt}
                       </span>
@@ -1118,8 +1287,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
                     {/* Icono del tipo */}
                     <div className="w-8 h-8 rounded-lg bg-[#182a1f] border border-[#243d2c] flex items-center justify-center text-sm shrink-0">
-                      {inc.tipo === 'gol' && '⚽'}
-                      {inc.tipo === 'autogol' && '🥅'}
+                      {inc.tipo === 'gol' && (esPenal ? '🎯⚽' : '⚽')}
+                      {inc.tipo === 'autogol' && '⚽🥅'}
                       {inc.tipo === 'amarilla' && <div className="w-3 h-4 bg-[#f4c430] rounded-xs" />}
                       {inc.tipo === 'doble_amarilla' && <div className="w-3 h-4 bg-[#f4c430] rounded-xs border border-red-500" />}
                       {inc.tipo === 'roja_directa' && <div className="w-3 h-4 bg-[#e63946] rounded-xs" />}
@@ -1139,21 +1308,31 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-white uppercase">
-                          {inc.tipo === 'cambio' ? 'Sustitución' : inc.tipo === 'tiro_arco' ? 'Tiro al arco' : inc.tipo === 'tiro' ? 'Tiro desviado' : inc.tipo.replace('_', ' ')}
+                          {inc.tipo === 'cambio' ? 'Sustitución' : esPenal ? 'Gol de Penal' : inc.tipo === 'autogol' ? 'Autogol' : inc.tipo === 'tiro_arco' ? 'Tiro al arco' : inc.tipo === 'tiro' ? 'Tiro desviado' : inc.tipo.replace('_', ' ')}
                         </span>
                         <span 
-                          style={esPropio 
+                          style={esPropioEfectivo 
                             ? { backgroundColor: `${colorClub}26`, color: colorClub, borderColor: `${colorClub}40` }
                             : { backgroundColor: `${colorRivalConfig}26`, color: colorRivalConfig, borderColor: `${colorRivalConfig}40` }
                           }
                           className="text-[10px] px-1.5 py-0.2 rounded font-semibold border"
                         >
-                          {esPropio ? nombreClub : draft.partido.rival}
+                          {esPropioEfectivo ? nombreClub : draft.partido.rival}
                         </span>
                       </div>
 
                       <p className="text-xs text-[#9aa89f] mt-0.5">
-                        {inc.tipo === 'cambio' ? (
+                        {esAutogol ? (
+                          inc.equipo === 'propio' ? (
+                            <>
+                              Autogol en contra de <strong className="text-white">#{convocadoObj?.numero || jugadorObj?.numero} {jugadorObj?.nombre || 'Jugador'}</strong> (e/c) • Suma gol para {draft.partido.rival}
+                            </>
+                          ) : (
+                            <>
+                              Autogol a favor (en contra de rival <strong className="text-white">#{rivalObj?.numero || (inc.jugador_id && inc.jugador_id !== 'undefined' ? inc.jugador_id : '')} {rivalObj?.nombre || ''}</strong>) • Suma gol para {nombreClub}
+                            </>
+                          )
+                        ) : inc.tipo === 'cambio' ? (
                           <>
                             Sale: <strong className="text-white">#{convocadoObj?.numero || jugadorObj?.numero} {jugadorObj?.nombre || 'Jugador'}</strong> ➔ Entra: <strong style={{ color: colorClub }}>#{convocadoSecObj?.numero || jugadorSecObj?.numero} {jugadorSecObj?.nombre || 'Jugador'}</strong>
                           </>
@@ -1162,7 +1341,8 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                         ) : esPropio ? (
                           <>
                             #{convocadoObj?.numero || jugadorObj?.numero} {jugadorObj?.nombre || 'Jugador'}
-                            {asistObj && (
+                            {esPenal && <span className="ml-1 text-amber-300 font-bold">(Penal)</span>}
+                            {asistObj && !esPenal && (
                               <span className="ml-1" style={{ color: colorClub }}>
                                 (Asistencia: #{convocadoAsist?.numero || asistObj.numero} {asistObj.nombre})
                               </span>
@@ -1175,20 +1355,32 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                             ) : (
                               <>#{rivalObj?.numero || (inc.jugador_id && inc.jugador_id !== 'undefined' ? inc.jugador_id : '')} {draft.partido.rival}</>
                             )}
+                            {esPenal && <span className="ml-1 text-amber-300 font-bold">(Penal)</span>}
                           </>
                         )}
-                        {inc.detalle && ` • ${inc.detalle}`}
+                        {inc.detalle && !inc.detalle.toLowerCase().trim().endsWith('penal') && ` • ${inc.detalle}`}
                       </p>
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => handleEliminarIncidencia(inc.id)}
-                    className="p-1.5 text-zinc-600 hover:text-[#e63946] transition-colors rounded-lg cursor-pointer"
-                    title="Eliminar incidencia"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleAbrirEditarIncidenciaVivo(inc)}
+                      className="p-1.5 text-zinc-400 hover:text-[#3ddc84] transition-colors rounded-lg cursor-pointer"
+                      title="Editar incidencia en vivo"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEliminarIncidencia(inc.id)}
+                      className="p-1.5 text-zinc-600 hover:text-[#e63946] transition-colors rounded-lg cursor-pointer"
+                      title="Eliminar incidencia"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               );
             })
@@ -1266,7 +1458,12 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
           <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl w-full max-w-xl p-4 sm:p-5 shadow-2xl relative max-h-[92vh] flex flex-col">
             
             <button
-              onClick={() => setModalIncidenciaAbierto(false)}
+              onClick={() => {
+                setModalIncidenciaAbierto(false);
+                setPasoComentario(false);
+                setPendienteConfirmacion(null);
+                setPasoAsistencia(false);
+              }}
               className="absolute top-4 right-4 text-[#9aa89f] hover:text-white p-1 rounded-lg cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -1276,13 +1473,21 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
             <div className="border-b border-[#243d2c] pb-3 mb-3">
               <div className="flex items-center gap-2">
                 <span className="text-xl">
-                  {tipoSeleccionado === 'gol' ? '⚽' : tipoSeleccionado === 'tiro_arco' ? '🎯' : tipoSeleccionado === 'tiro' ? '💨' : '⚡'}
+                  {tipoSeleccionado === 'gol' 
+                    ? (subtipoGol === 'penal' ? '🎯⚽' : subtipoGol === 'autogol' ? '⚽🥅' : '⚽') 
+                    : tipoSeleccionado === 'tiro_arco' ? '🎯' : tipoSeleccionado === 'tiro' ? '💨' : '⚡'}
                 </span>
                 <h3 className="font-display font-bold text-base sm:text-lg text-white uppercase tracking-wide">
-                  {tipoSeleccionado === 'cambio'
+                  {pasoComentario
+                    ? 'Confirmar Incidencia y Detalle'
+                    : tipoSeleccionado === 'cambio'
                     ? (pasoSustitucion === 1 ? 'Sustitución Paso 1: ¿Quién Sale?' : 'Sustitución Paso 2: ¿Quién Entra?')
                     : pasoAsistencia
                     ? '¿Quién dio la Asistencia? (Opcional)'
+                    : subtipoGol === 'penal'
+                    ? 'Registrar Gol de Penal'
+                    : subtipoGol === 'autogol'
+                    ? 'Registrar Autogol (Gol en Contra)'
                     : `Registrar ${tipoSeleccionado === 'tiro_arco' ? 'Tiro al Arco' : tipoSeleccionado === 'tiro' ? 'Tiro Desviado' : tipoSeleccionado?.replace('_', ' ').toUpperCase()}`}
                 </h3>
               </div>
@@ -1296,446 +1501,660 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
               </p>
             </div>
 
-            {/* Toggle Equipo (Propio vs Rival) si no es cambio ni paso de asistencia */}
-            {tipoSeleccionado !== 'cambio' && !pasoAsistencia && (
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <button
-                  type="button"
-                  onClick={() => setEquipoIncidencia('propio')}
-                  style={equipoIncidencia === 'propio' ? { backgroundColor: `${colorClub}26`, borderColor: colorClub, color: colorClub } : undefined}
-                  className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
-                    equipoIncidencia === 'propio'
-                      ? 'shadow-sm'
-                      : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
-                  }`}
-                >
-                  {nombreClub}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEquipoIncidencia('rival')}
-                  style={equipoIncidencia === 'rival' ? { backgroundColor: `${colorRivalConfig}26`, borderColor: colorRivalConfig, color: colorRivalConfig } : undefined}
-                  className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
-                    equipoIncidencia === 'rival'
-                      ? 'shadow-sm'
-                      : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
-                  }`}
-                >
-                  {draft.partido.rival}
-                </button>
-              </div>
-            )}
+            {/* SI ESTAMOS EN EL PASO FINAL DE COMENTARIO Y CONFIRMACIÓN */}
+            {pasoComentario && pendienteConfirmacion ? (
+              <div className="py-2 space-y-4 overflow-y-auto">
+                {/* Resumen de la jugada */}
+                <div className="p-3.5 rounded-xl bg-[#0f1712] border border-[#243d2c]">
+                  <div className="flex items-center justify-between text-xs text-[#9aa89f] mb-2 border-b border-[#243d2c]/60 pb-1.5">
+                    <span className="font-semibold uppercase tracking-wider text-[#3ddc84]">
+                      Paso Final: Comentario y Confirmación
+                    </span>
+                    <span className="font-mono font-bold text-white">
+                      {minutoInfoCongelado?.display || `${minutoCongelado}'`} ({tiempo}T)
+                    </span>
+                  </div>
 
-            {/* Selector de modo visual: Formación vs Lista */}
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-semibold text-[#9aa89f]">
-                {tipoSeleccionado === 'doble_amarilla'
-                  ? 'Seleccioná el jugador con 1 amarilla previa:'
-                  : pasoAsistencia 
-                  ? 'Tocá el asistidor o elegí gol individual:'
-                  : tipoSeleccionado === 'cambio' && pasoSustitucion === 2 
-                  ? 'Elegí el suplente que ingresa a la cancha:' 
-                  : 'Tocá el jugador en la cancha o en la lista:'}
-              </span>
-
-              {/* Selector Vista Cancha / Vista Lista */}
-              {tipoSeleccionado !== 'doble_amarilla' && !(tipoSeleccionado === 'cambio' && pasoSustitucion === 2) ? (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setVistaCancha(true)}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                      vistaCancha ? '' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
-                    }`}
-                    style={vistaCancha ? {
-                      backgroundColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}26`,
-                      borderColor: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig,
-                      color: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig
-                    } : undefined}
-                  >
-                    ⚽ Formación
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVistaCancha(false)}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                      !vistaCancha ? '' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
-                    }`}
-                    style={!vistaCancha ? {
-                      backgroundColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}26`,
-                      borderColor: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig,
-                      color: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig
-                    } : undefined}
-                  >
-                    📋 Lista
-                  </button>
-                </div>
-              ) : (
-                <span 
-                  className="text-[10px] font-bold px-2 py-0.5 rounded border"
-                  style={{
-                    backgroundColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}26`,
-                    borderColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}40`,
-                    color: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig
-                  }}
-                >
-                  {tipoSeleccionado === 'cambio' ? '📋 Selección de Suplente: Formato Lista' : 'Modo Lista Exclusivo'}
-                </span>
-              )}
-            </div>
-
-            {/* Si estamos en paso de asistencia, botón para "Sin Asistencia" */}
-            {pasoAsistencia && (
-              <button
-                type="button"
-                onClick={() => confirmarGuardadoIncidencia(goleadorId!, undefined, undefined)}
-                className="w-full mb-3 py-2 px-3 bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
-              >
-                <span>❌ Sin Asistencia / Jugada Individual</span>
-              </button>
-            )}
-
-            {/* Contenido: Cancha o Lista */}
-            <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[380px] pr-1">
-              {vistaCancha && tipoSeleccionado !== 'doble_amarilla' && !(tipoSeleccionado === 'cambio' && pasoSustitucion === 2) ? (
-                // ================= VISTA FORMACIÓN =================
-                <div className="py-1">
-                  {equipoIncidencia === 'propio' ? (
-                    <>
-                      {/* Indicador de Táctica y Selector en Vivo */}
-                      <div className="flex items-center justify-between bg-[#132319] border border-[#243d2c] rounded-xl px-2.5 py-1.5 mb-2 gap-2 flex-wrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-semibold text-zinc-300">Táctica:</span>
-                          <span 
-                            className="text-xs font-bold font-mono px-2 py-0.5 rounded border"
-                            style={{
-                              backgroundColor: `${colorClub}26`,
-                              borderColor: `${colorClub}50`,
-                              color: colorClub
-                            }}
-                          >
-                            {formacionPropiaActual}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1 flex-wrap">
-                          {Object.keys(FORMACIONES_DISPONIBLES).map(esq => (
-                            <button
-                              key={esq}
-                              type="button"
-                              onClick={() => handleCambiarEsquemaEnVivo(esq)}
-                              className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition-all cursor-pointer ${
-                                formacionPropiaActual === esq
-                                  ? 'border-transparent'
-                                  : 'bg-[#0f1712] text-zinc-400 border-[#243d2c] hover:text-white'
-                              }`}
-                              style={formacionPropiaActual === esq ? {
-                                backgroundColor: colorClub,
-                                color: getContrastingTextColor(colorClub)
-                              } : undefined}
-                              title={`Cambiar a ${esq}`}
-                            >
-                              {esq}
-                            </button>
-                          ))}
-                        </div>
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl mt-0.5 shrink-0">
+                      {pendienteConfirmacion.tipo === 'gol' && (pendienteConfirmacion.esPenal ? '🎯⚽' : '⚽')}
+                      {pendienteConfirmacion.tipo === 'autogol' && '⚽🥅'}
+                      {pendienteConfirmacion.tipo === 'amarilla' && '🟨'}
+                      {pendienteConfirmacion.tipo === 'doble_amarilla' && '🟨🟥'}
+                      {pendienteConfirmacion.tipo === 'roja_directa' && '🟥'}
+                      {pendienteConfirmacion.tipo === 'tiro_arco' && '🎯'}
+                      {pendienteConfirmacion.tipo === 'tiro' && '💨'}
+                      {pendienteConfirmacion.tipo === 'falta' && '🚫'}
+                      {pendienteConfirmacion.tipo === 'cambio' && '🔄'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-white uppercase">
+                          {pendienteConfirmacion.tipo === 'gol'
+                            ? (pendienteConfirmacion.esPenal ? 'Gol de Penal' : 'Gol')
+                            : pendienteConfirmacion.tipo === 'autogol'
+                            ? 'Autogol (e/c)'
+                            : pendienteConfirmacion.tipo === 'tiro_arco'
+                            ? 'Tiro al Arco'
+                            : pendienteConfirmacion.tipo === 'tiro'
+                            ? 'Tiro Desviado'
+                            : pendienteConfirmacion.tipo === 'cambio'
+                            ? 'Sustitución'
+                            : pendienteConfirmacion.tipo.replace('_', ' ')}
+                        </span>
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded font-semibold border"
+                          style={{
+                            backgroundColor: `${pendienteConfirmacion.equipo === 'propio' ? colorClub : colorRivalConfig}26`,
+                            color: pendienteConfirmacion.equipo === 'propio' ? colorClub : colorRivalConfig,
+                            borderColor: `${pendienteConfirmacion.equipo === 'propio' ? colorClub : colorRivalConfig}50`
+                          }}
+                        >
+                          {pendienteConfirmacion.equipo === 'propio' ? nombreClub : draft.partido.rival}
+                        </span>
                       </div>
 
-                      <TacticaCancha
-                        titulo={`${nombreClub} (${formacionPropiaActual})`}
-                        jugadores={
-                          pasoAsistencia
-                            ? jugadoresCanchaPropia.filter(j => j.id !== goleadorId)
-                            : jugadoresCanchaPropia
-                        }
-                        suplentes={suplentesCanchaPropia}
-                        mostrarSuplentes={tipoSeleccionado !== 'cambio'}
-                        colorHex={colorClub}
-                        modoInteractivo={true}
-                        editableDorsales={true}
-                      onEditarNumero={(id, num) => handleActualizarDorsalPropio(id, num)}
-                      onSeleccionarJugador={(idOrObj, obj) => {
-                        const targetId = typeof idOrObj === 'object' && idOrObj !== null 
-                          ? (idOrObj as any).id 
-                          : (obj?.id || String(idOrObj));
+                      <div className="text-xs text-zinc-300 mt-1">
+                        {pendienteConfirmacion.tipo === 'cambio' ? (
+                          <div>
+                            <span>Sale: <strong className="text-white">#{convocadoSale?.numero || jugSale?.numero} {jugSale?.nombre}</strong></span>
+                            <span className="mx-1.5">➔</span>
+                            <span>Entra: <strong className="text-[#3ddc84]">#{convocadoEntra?.numero || jugEntra?.numero} {jugEntra?.nombre}</strong></span>
+                          </div>
+                        ) : pendienteConfirmacion.equipo === 'propio' ? (
+                          <div>
+                            <strong className="text-white">#{convocadoPrincipal?.numero || jugPrincipal?.numero} {jugPrincipal?.nombre}</strong>
+                            {pendienteConfirmacion.tipo === 'autogol' && (
+                              <span className="text-rose-400 ml-1.5 font-semibold text-[11px] block sm:inline">
+                                (Gol en contra • Suma gol para {draft.partido.rival})
+                              </span>
+                            )}
+                            {pendienteConfirmacion.asistenciaId && (
+                              <span className="text-emerald-400 ml-1.5 text-[11px] block sm:inline">
+                                (Asistencia: #{convocadoAsist?.numero || jugAsist?.numero} {jugAsist?.nombre})
+                              </span>
+                            )}
+                            {pendienteConfirmacion.tipo === 'gol' && !pendienteConfirmacion.asistenciaId && !pendienteConfirmacion.esPenal && (
+                              <span className="text-zinc-400 ml-1.5 text-[11px] block sm:inline">
+                                (Sin asistencia / Jugada individual)
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <strong className="text-white">#{rivalPrincipal?.numero || pendienteConfirmacion.jugadorId} {rivalPrincipal?.nombre || draft.partido.rival}</strong>
+                            {pendienteConfirmacion.tipo === 'autogol' && (
+                              <span className="text-[#3ddc84] ml-1.5 font-semibold text-[11px] block sm:inline">
+                                (Gol en contra rival • Suma gol para {nombreClub})
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-                        if (pasoAsistencia) {
-                          confirmarGuardadoIncidencia(goleadorId!, undefined, targetId);
-                        } else if (tipoSeleccionado === 'gol' && equipoIncidencia === 'propio') {
-                          setGoleadorId(targetId);
-                          setPasoAsistencia(true);
-                        } else if (tipoSeleccionado === 'cambio') {
-                          if (pasoSustitucion === 1) {
-                            setJugadorSaleId(targetId);
-                            setPasoSustitucion(2);
-                            setVistaCancha(false);
-                            setFiltroBuscador('');
-                          } else {
-                            confirmarGuardadoIncidencia(jugadorSaleId!, targetId);
-                          }
-                        } else {
-                          confirmarGuardadoIncidencia(targetId);
-                        }
-                      }}
-                      onSeleccionarSuplente={(idOrObj, obj) => {
-                        const targetId = typeof idOrObj === 'object' && idOrObj !== null 
-                          ? (idOrObj as any).id 
-                          : (obj?.id || String(idOrObj));
+                {/* Campo de Comentario / Nota adicional al final de todo */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-white flex items-center justify-between">
+                    <span>Comentario o detalle adicional (Opcional):</span>
+                    <span className="text-[10px] text-zinc-400 font-normal">Aparecerá en la línea de tiempo</span>
+                  </label>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={detalleTexto}
+                    onChange={e => setDetalleTexto(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        ejecutarGuardadoFinal();
+                      }
+                    }}
+                    placeholder="Ej: de cabeza, remate al ángulo, falta táctica..."
+                    className="w-full px-3.5 py-2.5 bg-[#0f1712] border border-[#243d2c] focus:border-[#3ddc84] rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none transition-colors"
+                  />
 
-                        if (pasoAsistencia) {
-                          confirmarGuardadoIncidencia(goleadorId!, undefined, targetId);
-                        } else if (tipoSeleccionado === 'gol' && equipoIncidencia === 'propio') {
-                          setGoleadorId(targetId);
-                          setPasoAsistencia(true);
-                        } else if (tipoSeleccionado === 'cambio') {
-                          if (pasoSustitucion === 1) {
-                            setJugadorSaleId(targetId);
-                            setPasoSustitucion(2);
-                            setVistaCancha(false);
-                            setFiltroBuscador('');
-                          } else {
-                            confirmarGuardadoIncidencia(jugadorSaleId!, targetId);
-                          }
-                        } else {
-                          confirmarGuardadoIncidencia(targetId);
-                        }
-                      }}
-                    />
-                  </>
-                  ) : (
-                    <TacticaCancha
-                      titulo={`Rival: ${draft.partido.rival} (${formacionRivalActual})`}
-                      jugadores={jugadoresCanchaRival}
-                      suplentes={suplentesCanchaRival}
-                      colorHex={colorRivalConfig}
-                      modoInteractivo={true}
-                      editableDorsales={true}
-                      onEditarNumero={(id, num) => handleActualizarRival(id, num)}
-                      onSeleccionarJugador={(idOrObj, obj) => {
-                        const num = typeof idOrObj === 'object' && idOrObj !== null 
-                          ? String((idOrObj as any).numero) 
-                          : (obj?.numero ? String(obj.numero) : String(idOrObj));
-                        confirmarGuardadoIncidencia(num);
-                      }}
-                      onSeleccionarSuplente={(idOrObj, obj) => {
-                        const num = typeof idOrObj === 'object' && idOrObj !== null 
-                          ? String((idOrObj as any).numero) 
-                          : (obj?.numero ? String(obj.numero) : String(idOrObj));
-                        confirmarGuardadoIncidencia(num);
-                      }}
-                    />
+                  {/* Sugerencias Rápidas / Chips */}
+                  {sugerenciasRapidas.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {sugerenciasRapidas.map((sug) => (
+                        <button
+                          key={sug}
+                          type="button"
+                          onClick={() => {
+                            setDetalleTexto(prev => prev ? `${prev}, ${sug.toLowerCase()}` : sug);
+                          }}
+                          className="px-2.5 py-1 text-[11px] bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-zinc-300 hover:text-white rounded-lg transition-colors cursor-pointer"
+                        >
+                          + {sug}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
-              ) : (
-                // ================= VISTA LISTA TRADICIONAL =================
-                <div className="space-y-2">
-                  <div className="relative mb-2">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#9aa89f]">
-                      <Search className="w-4 h-4" />
+
+                {/* Botones de Acción */}
+                <div className="pt-3 border-t border-[#243d2c] flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPasoComentario(false);
+                    }}
+                    className="px-4 py-2.5 bg-[#0f1712] border border-[#243d2c] hover:border-zinc-500 text-zinc-300 hover:text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    ← Volver
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={ejecutarGuardadoFinal}
+                    className="flex-1 py-2.5 px-4 bg-[#3ddc84] hover:bg-[#32b86e] text-[#0a100d] rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-md flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Confirmar y Registrar Incidencia</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* PASO DE SELECCIÓN DE JUGADORES (CANCHA / LISTA) */
+              <>
+                {/* Selector de Subtipo de Gol (Jugada normal, Penal, Autogol) */}
+                {(tipoSeleccionado === 'gol' || tipoSeleccionado === 'autogol') && !pasoAsistencia && (
+                  <div className="space-y-2 mb-3">
+                    <div className="grid grid-cols-3 gap-1.5 bg-[#0f1712] p-1 rounded-xl border border-[#243d2c]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTipoSeleccionado('gol');
+                          setSubtipoGol('jugada');
+                        }}
+                        className={`py-1.5 px-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          subtipoGol === 'jugada' ? 'bg-[#3ddc84] text-[#0f1712] shadow-sm' : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        <span>⚽</span>
+                        <span className="truncate">Gol Normal</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTipoSeleccionado('gol');
+                          setSubtipoGol('penal');
+                        }}
+                        className={`py-1.5 px-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          subtipoGol === 'penal' ? 'bg-amber-400 text-[#0f1712] shadow-sm' : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        <span>🎯</span>
+                        <span className="truncate">Gol Penal</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTipoSeleccionado('autogol');
+                          setSubtipoGol('autogol');
+                        }}
+                        className={`py-1.5 px-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          subtipoGol === 'autogol' ? 'bg-[#e63946] text-white shadow-sm' : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        <span>🥅</span>
+                        <span className="truncate">Autogol</span>
+                      </button>
                     </div>
-                    <input
-                      type="text"
-                      value={filtroBuscador}
-                      onChange={(e) => setFiltroBuscador(e.target.value)}
-                      placeholder="Buscar por dorsal o nombre..."
-                      className="w-full pl-9 pr-3 py-2 bg-[#0f1712] border border-[#243d2c] rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#3ddc84]"
-                    />
-                  </div>
 
-                  <div className="space-y-1.5">
-                    {equipoIncidencia === 'propio' ? (
-                      (() => {
-                        // Jugadores elegibles para la acción seleccionada
-                        let convocadosFiltrados = draft.convocados;
-
-                        if (tipoSeleccionado === 'doble_amarilla') {
-                          // Solo jugadores que tengan exactamente 1 amarilla acumulada y no estén expulsados
-                          convocadosFiltrados = draft.convocados.filter(c => 
-                            amarillasPropias.get(c.jugador_id) === 1 && !expulsadosPropiosIds.has(c.jugador_id)
-                          );
-                        } else if (tipoSeleccionado === 'cambio' && pasoSustitucion === 1) {
-                          convocadosFiltrados = draft.convocados.filter(c => 
-                            jugadoresEnCanchaIds.has(c.jugador_id) && !expulsadosPropiosIds.has(c.jugador_id)
-                          );
-                        } else if (tipoSeleccionado === 'cambio' && pasoSustitucion === 2) {
-                          convocadosFiltrados = draft.convocados.filter(c => 
-                            jugadoresEnBancoIds.has(c.jugador_id) && c.jugador_id !== jugadorSaleId && !expulsadosPropiosIds.has(c.jugador_id)
-                          );
-                        } else if (pasoAsistencia) {
-                          convocadosFiltrados = draft.convocados.filter(c => 
-                            c.jugador_id !== goleadorId && !expulsadosPropiosIds.has(c.jugador_id)
-                          );
-                        } else {
-                          // Cualquier otra acción: excluir expulsados
-                          convocadosFiltrados = draft.convocados.filter(c => !expulsadosPropiosIds.has(c.jugador_id));
-                        }
-
-                        if (convocadosFiltrados.length === 0) {
-                          return (
-                            <div className="p-4 rounded-xl bg-[#0f1712] border border-amber-500/30 text-center my-2">
-                              <AlertTriangle className="w-5 h-5 text-amber-400 mx-auto mb-1.5" />
-                              <p className="text-xs text-amber-300 font-semibold">
-                                {tipoSeleccionado === 'doble_amarilla' 
-                                  ? `Ningún jugador de ${nombreClub} tiene 1 tarjeta amarilla previa para registrar una 2ª amarilla.`
-                                  : `No hay jugadores disponibles de ${nombreClub} para esta acción.`}
-                              </p>
-                              {tipoSeleccionado === 'doble_amarilla' && (
-                                <p className="text-[11px] text-[#9aa89f] mt-1">
-                                  La 2ª amarilla sólo se puede aplicar a futbolistas que ya cuenten con 1 amonestación previa en el partido.
-                                </p>
-                              )}
-                            </div>
-                          );
-                        }
-
-                        return convocadosFiltrados.map(c => {
-                          const jug = jugadoresMap.get(c.jugador_id);
-                          if (!jug) return null;
-                          if (
-                            filtroBuscador &&
-                            !jug.nombre.toLowerCase().includes(filtroBuscador.toLowerCase()) &&
-                            !String(c.numero || jug.numero).includes(filtroBuscador)
-                          ) {
-                            return null;
-                          }
-
-                          return (
-                            <button
-                              key={jug.id}
-                              type="button"
-                              onClick={() => {
-                                if (pasoAsistencia) {
-                                  confirmarGuardadoIncidencia(goleadorId!, undefined, jug.id);
-                                } else if (tipoSeleccionado === 'gol' && equipoIncidencia === 'propio') {
-                                  setGoleadorId(jug.id);
-                                  setPasoAsistencia(true);
-                                } else if (tipoSeleccionado === 'cambio') {
-                                  if (pasoSustitucion === 1) {
-                                    setJugadorSaleId(jug.id);
-                                    setPasoSustitucion(2);
-                                    setFiltroBuscador('');
-                                  } else {
-                                    confirmarGuardadoIncidencia(jugadorSaleId!, jug.id);
-                                  }
-                                } else {
-                                  confirmarGuardadoIncidencia(jug.id);
-                                }
-                              }}
-                              className="w-full p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] hover:bg-[#243d2c]/40 transition-all flex items-center justify-between text-left cursor-pointer group"
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <span className="font-display font-bold text-base text-[#3ddc84] w-8 h-8 rounded-lg bg-[#182a1f] flex items-center justify-center shrink-0">
-                                  #{c.numero || jug.numero}
-                                </span>
-                                <div>
-                                  <span className="text-xs font-semibold text-white group-hover:text-[#3ddc84] transition-colors block">
-                                    {jug.nombre}
-                                  </span>
-                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className="text-[10px] text-[#9aa89f]">
-                                      {c.posicion_tactica || jug.posicion}
-                                    </span>
-                                    {amarillasPropias.get(c.jugador_id) === 1 && (
-                                      <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
-                                        1ª Amarilla previa
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                              <ChevronRight className="w-4 h-4 text-[#9aa89f] group-hover:text-white" />
-                            </button>
-                          );
-                        });
-                      })()
-                    ) : (
-                      (() => {
-                        let rivalesFiltrados = draft.rivales;
-
-                        if (tipoSeleccionado === 'doble_amarilla') {
-                          rivalesFiltrados = draft.rivales.filter(r => 
-                            (amarillasRivales.get(String(r.numero)) === 1 || amarillasRivales.get(r.id) === 1) &&
-                            !expulsadosRivalesIds.has(String(r.numero)) &&
-                            !expulsadosRivalesIds.has(r.id)
-                          );
-                        } else {
-                          rivalesFiltrados = draft.rivales.filter(r => 
-                            !expulsadosRivalesIds.has(String(r.numero)) && !expulsadosRivalesIds.has(r.id)
-                          );
-                        }
-
-                        if (rivalesFiltrados.length === 0) {
-                          return (
-                            <div className="p-4 rounded-xl bg-[#0f1712] border border-amber-500/30 text-center my-2">
-                              <AlertTriangle className="w-5 h-5 text-amber-400 mx-auto mb-1.5" />
-                              <p className="text-xs text-amber-300 font-semibold">
-                                {tipoSeleccionado === 'doble_amarilla'
-                                  ? `Ningún jugador de ${draft.partido.rival} tiene 1 tarjeta amarilla previa para registrar una 2ª amarilla.`
-                                  : `No hay jugadores rivales disponibles.`}
-                              </p>
-                              {tipoSeleccionado === 'doble_amarilla' && (
-                                <p className="text-[11px] text-[#9aa89f] mt-1">
-                                  La 2ª amarilla sólo se puede aplicar a futbolistas que ya cuenten con 1 amonestación previa en el partido.
-                                </p>
-                              )}
-                            </div>
-                          );
-                        }
-
-                        return rivalesFiltrados
-                          .filter(r => 
-                            !filtroBuscador || 
-                            String(r.numero).includes(filtroBuscador) || 
-                            r.nombre.toLowerCase().includes(filtroBuscador.toLowerCase())
-                          )
-                          .map(r => (
-                            <button
-                              key={r.id}
-                              type="button"
-                              onClick={() => confirmarGuardadoIncidencia(String(r.numero))}
-                              style={{ borderColor: `${colorRivalConfig}40` }}
-                              className="w-full p-2.5 rounded-xl bg-[#0f1712] border hover:opacity-95 transition-all flex items-center justify-between text-left cursor-pointer group"
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <span 
-                                  style={{ backgroundColor: `${colorRivalConfig}26`, color: colorRivalConfig }}
-                                  className="font-display font-bold text-base w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                                >
-                                  #{r.numero}
-                                </span>
-                                <div>
-                                  <span 
-                                    className="text-xs font-semibold text-white transition-colors block"
-                                  >
-                                    {r.nombre ? r.nombre : `Dorsal #${r.numero}`}
-                                  </span>
-                                  {(amarillasRivales.get(String(r.numero)) === 1 || amarillasRivales.get(r.id) === 1) && (
-                                    <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
-                                      1ª Amarilla previa
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <ChevronRight className="w-4 h-4 text-[#9aa89f] group-hover:text-white" />
-                            </button>
-                          ));
-                      })()
+                    {subtipoGol === 'autogol' && (
+                      <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] leading-tight">
+                        ℹ️ <strong>Autogol:</strong> Seleccioná qué jugador convirtió el gol en contra. El tanto se sumará automáticamente en el marcador del rival y figurará en sus incidencias.
+                      </div>
                     )}
                   </div>
-                </div>
-              )}
-            </div>
+                )}
 
-            {/* Detalle opcional */}
-            {tipoSeleccionado !== 'cambio' && !pasoAsistencia && (
-              <div className="mt-3 pt-3 border-t border-[#243d2c]">
-                <input
-                  type="text"
-                  value={detalleTexto}
-                  onChange={(e) => setDetalleTexto(e.target.value)}
-                  placeholder="Detalle opcional (ej: de cabeza, penal, falta táctica)..."
-                  className="w-full px-3 py-2 bg-[#0f1712] border border-[#243d2c] rounded-xl text-xs text-white focus:outline-none focus:border-[#3ddc84]"
-                />
-              </div>
+                {/* Toggle Equipo (Propio vs Rival) si no es cambio ni paso de asistencia */}
+                {tipoSeleccionado !== 'cambio' && !pasoAsistencia && (
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setEquipoIncidencia('propio')}
+                      style={equipoIncidencia === 'propio' ? { backgroundColor: `${colorClub}26`, borderColor: colorClub, color: colorClub } : undefined}
+                      className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                        equipoIncidencia === 'propio'
+                          ? 'shadow-sm'
+                          : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
+                      }`}
+                    >
+                      {nombreClub}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEquipoIncidencia('rival')}
+                      style={equipoIncidencia === 'rival' ? { backgroundColor: `${colorRivalConfig}26`, borderColor: colorRivalConfig, color: colorRivalConfig } : undefined}
+                      className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                        equipoIncidencia === 'rival'
+                          ? 'shadow-sm'
+                          : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f]'
+                      }`}
+                    >
+                      {draft.partido.rival}
+                    </button>
+                  </div>
+                )}
+
+                {/* Selector de modo visual: Formación vs Lista */}
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-semibold text-[#9aa89f]">
+                    {tipoSeleccionado === 'doble_amarilla'
+                      ? 'Seleccioná el jugador con 1 amarilla previa:'
+                      : pasoAsistencia 
+                      ? 'Tocá el asistidor o elegí gol individual:'
+                      : tipoSeleccionado === 'cambio' && pasoSustitucion === 2 
+                      ? 'Elegí el suplente que ingresa a la cancha:' 
+                      : subtipoGol === 'autogol'
+                      ? 'Elegí quién cometió el autogol:'
+                      : subtipoGol === 'penal'
+                      ? 'Elegí quién pateó el penal:'
+                      : 'Tocá el jugador en la cancha o en la lista:'}
+                  </span>
+
+                  {/* Selector Vista Cancha / Vista Lista */}
+                  {tipoSeleccionado !== 'doble_amarilla' && !(tipoSeleccionado === 'cambio' && pasoSustitucion === 2) ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setVistaCancha(true)}
+                        className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                          vistaCancha ? '' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
+                        }`}
+                        style={vistaCancha ? {
+                          backgroundColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}26`,
+                          borderColor: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig,
+                          color: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig
+                        } : undefined}
+                      >
+                        ⚽ Formación
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVistaCancha(false)}
+                        className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                          !vistaCancha ? '' : 'bg-[#0f1712] border-[#243d2c] text-zinc-400'
+                        }`}
+                        style={!vistaCancha ? {
+                          backgroundColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}26`,
+                          borderColor: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig,
+                          color: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig
+                        } : undefined}
+                      >
+                        📋 Lista
+                      </button>
+                    </div>
+                  ) : (
+                    <span 
+                      className="text-[10px] font-bold px-2 py-0.5 rounded border"
+                      style={{
+                        backgroundColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}26`,
+                        borderColor: `${equipoIncidencia === 'propio' ? colorClub : colorRivalConfig}40`,
+                        color: equipoIncidencia === 'propio' ? colorClub : colorRivalConfig
+                      }}
+                    >
+                      {tipoSeleccionado === 'cambio' ? '📋 Selección de Suplente: Formato Lista' : 'Modo Lista Exclusivo'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Si estamos en paso de asistencia, botón para "Sin Asistencia" */}
+                {pasoAsistencia && (
+                  <button
+                    type="button"
+                    onClick={() => avanzarAPasoComentario(goleadorId!, undefined, undefined)}
+                    className="w-full mb-3 py-2 px-3 bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <span>❌ Sin Asistencia / Jugada Individual</span>
+                  </button>
+                )}
+
+                {/* Contenido: Cancha o Lista */}
+                <div className="flex-1 overflow-y-auto min-h-[220px] max-h-[380px] pr-1">
+                  {vistaCancha && tipoSeleccionado !== 'doble_amarilla' && !(tipoSeleccionado === 'cambio' && pasoSustitucion === 2) ? (
+                    // ================= VISTA FORMACIÓN =================
+                    <div className="py-1">
+                      {equipoIncidencia === 'propio' ? (
+                        <>
+                          {/* Indicador de Táctica y Selector en Vivo */}
+                          <div className="flex items-center justify-between bg-[#132319] border border-[#243d2c] rounded-xl px-2.5 py-1.5 mb-2 gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-semibold text-zinc-300">Táctica:</span>
+                              <span 
+                                className="text-xs font-bold font-mono px-2 py-0.5 rounded border"
+                                style={{
+                                  backgroundColor: `${colorClub}26`,
+                                  borderColor: `${colorClub}50`,
+                                  color: colorClub
+                                }}
+                              >
+                                {formacionPropiaActual}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {Object.keys(FORMACIONES_DISPONIBLES).map(esq => (
+                                <button
+                                  key={esq}
+                                  type="button"
+                                  onClick={() => handleCambiarEsquemaEnVivo(esq)}
+                                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition-all cursor-pointer ${
+                                    formacionPropiaActual === esq
+                                      ? 'border-transparent'
+                                      : 'bg-[#0f1712] text-zinc-400 border-[#243d2c] hover:text-white'
+                                  }`}
+                                  style={formacionPropiaActual === esq ? {
+                                    backgroundColor: colorClub,
+                                    color: getContrastingTextColor(colorClub)
+                                  } : undefined}
+                                  title={`Cambiar a ${esq}`}
+                                >
+                                  {esq}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <TacticaCancha
+                            titulo={`${nombreClub} (${formacionPropiaActual})`}
+                            jugadores={
+                              pasoAsistencia
+                                ? jugadoresCanchaPropia.filter(j => j.id !== goleadorId)
+                                : jugadoresCanchaPropia
+                            }
+                            suplentes={suplentesCanchaPropia}
+                            mostrarSuplentes={tipoSeleccionado !== 'cambio'}
+                            colorHex={colorClub}
+                            modoInteractivo={true}
+                            editableDorsales={true}
+                            onEditarNumero={(id, num) => handleActualizarDorsalPropio(id, num)}
+                            onSeleccionarJugador={(idOrObj, obj) => {
+                              const targetId = typeof idOrObj === 'object' && idOrObj !== null 
+                                ? (idOrObj as any).id 
+                                : (obj?.id || String(idOrObj));
+
+                              if (pasoAsistencia) {
+                                avanzarAPasoComentario(goleadorId!, undefined, targetId);
+                              } else if (tipoSeleccionado === 'gol' && equipoIncidencia === 'propio') {
+                                if (subtipoGol === 'penal' || subtipoGol === 'autogol') {
+                                  avanzarAPasoComentario(targetId);
+                                } else {
+                                  setGoleadorId(targetId);
+                                  setPasoAsistencia(true);
+                                }
+                              } else if (tipoSeleccionado === 'cambio') {
+                                if (pasoSustitucion === 1) {
+                                  setJugadorSaleId(targetId);
+                                  setPasoSustitucion(2);
+                                  setVistaCancha(false);
+                                  setFiltroBuscador('');
+                                } else {
+                                  avanzarAPasoComentario(jugadorSaleId!, targetId);
+                                }
+                              } else {
+                                avanzarAPasoComentario(targetId);
+                              }
+                            }}
+                            onSeleccionarSuplente={(idOrObj, obj) => {
+                              const targetId = typeof idOrObj === 'object' && idOrObj !== null 
+                                ? (idOrObj as any).id 
+                                : (obj?.id || String(idOrObj));
+
+                              if (pasoAsistencia) {
+                                avanzarAPasoComentario(goleadorId!, undefined, targetId);
+                              } else if (tipoSeleccionado === 'gol' && equipoIncidencia === 'propio') {
+                                if (subtipoGol === 'penal' || subtipoGol === 'autogol') {
+                                  avanzarAPasoComentario(targetId);
+                                } else {
+                                  setGoleadorId(targetId);
+                                  setPasoAsistencia(true);
+                                }
+                              } else if (tipoSeleccionado === 'cambio') {
+                                if (pasoSustitucion === 1) {
+                                  setJugadorSaleId(targetId);
+                                  setPasoSustitucion(2);
+                                  setVistaCancha(false);
+                                  setFiltroBuscador('');
+                                } else {
+                                  avanzarAPasoComentario(jugadorSaleId!, targetId);
+                                }
+                              } else {
+                                avanzarAPasoComentario(targetId);
+                              }
+                            }}
+                          />
+                        </>
+                      ) : (
+                        <TacticaCancha
+                          titulo={`Rival: ${draft.partido.rival} (${formacionRivalActual})`}
+                          jugadores={jugadoresCanchaRival}
+                          suplentes={suplentesCanchaRival}
+                          colorHex={colorRivalConfig}
+                          modoInteractivo={true}
+                          editableDorsales={true}
+                          onEditarNumero={(id, num) => handleActualizarRival(id, num)}
+                          onSeleccionarJugador={(idOrObj, obj) => {
+                            const num = typeof idOrObj === 'object' && idOrObj !== null 
+                              ? String((idOrObj as any).numero) 
+                              : (obj?.numero ? String(obj.numero) : String(idOrObj));
+                            avanzarAPasoComentario(num);
+                          }}
+                          onSeleccionarSuplente={(idOrObj, obj) => {
+                            const num = typeof idOrObj === 'object' && idOrObj !== null 
+                              ? String((idOrObj as any).numero) 
+                              : (obj?.numero ? String(obj.numero) : String(idOrObj));
+                            avanzarAPasoComentario(num);
+                          }}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    // ================= VISTA LISTA TRADICIONAL =================
+                    <div className="space-y-2">
+                      <div className="relative mb-2">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#9aa89f]">
+                          <Search className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="text"
+                          value={filtroBuscador}
+                          onChange={(e) => setFiltroBuscador(e.target.value)}
+                          placeholder="Buscar por dorsal o nombre..."
+                          className="w-full pl-9 pr-3 py-2 bg-[#0f1712] border border-[#243d2c] rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-[#3ddc84]"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {equipoIncidencia === 'propio' ? (
+                          (() => {
+                            let convocadosFiltrados = draft.convocados;
+
+                            if (tipoSeleccionado === 'doble_amarilla') {
+                              convocadosFiltrados = draft.convocados.filter(c => 
+                                amarillasPropias.get(c.jugador_id) === 1 && !expulsadosPropiosIds.has(c.jugador_id)
+                              );
+                            } else if (tipoSeleccionado === 'cambio' && pasoSustitucion === 1) {
+                              convocadosFiltrados = draft.convocados.filter(c => 
+                                jugadoresEnCanchaIds.has(c.jugador_id) && !expulsadosPropiosIds.has(c.jugador_id)
+                              );
+                            } else if (tipoSeleccionado === 'cambio' && pasoSustitucion === 2) {
+                              convocadosFiltrados = draft.convocados.filter(c => 
+                                jugadoresEnBancoIds.has(c.jugador_id) && c.jugador_id !== jugadorSaleId && !expulsadosPropiosIds.has(c.jugador_id)
+                              );
+                            } else if (pasoAsistencia) {
+                              convocadosFiltrados = draft.convocados.filter(c => 
+                                c.jugador_id !== goleadorId && !expulsadosPropiosIds.has(c.jugador_id)
+                              );
+                            } else {
+                              convocadosFiltrados = draft.convocados.filter(c => !expulsadosPropiosIds.has(c.jugador_id));
+                            }
+
+                            if (convocadosFiltrados.length === 0) {
+                              return (
+                                <div className="p-4 rounded-xl bg-[#0f1712] border border-amber-500/30 text-center my-2">
+                                  <AlertTriangle className="w-5 h-5 text-amber-400 mx-auto mb-1.5" />
+                                  <p className="text-xs text-amber-300 font-semibold">
+                                    {tipoSeleccionado === 'doble_amarilla' 
+                                      ? `Ningún jugador de ${nombreClub} tiene 1 tarjeta amarilla previa para registrar una 2ª amarilla.`
+                                      : `No hay jugadores disponibles de ${nombreClub} para esta acción.`}
+                                  </p>
+                                  {tipoSeleccionado === 'doble_amarilla' && (
+                                    <p className="text-[11px] text-[#9aa89f] mt-1">
+                                      La 2ª amarilla sólo se puede aplicar a futbolistas que ya cuenten con 1 amonestación previa en el partido.
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            }
+
+                            return convocadosFiltrados.map(c => {
+                              const jug = jugadoresMap.get(c.jugador_id);
+                              if (!jug) return null;
+                              if (
+                                filtroBuscador &&
+                                !jug.nombre.toLowerCase().includes(filtroBuscador.toLowerCase()) &&
+                                !String(c.numero || jug.numero).includes(filtroBuscador)
+                              ) {
+                                return null;
+                              }
+
+                              return (
+                                <button
+                                  key={jug.id}
+                                  type="button"
+                                  onClick={() => {
+                                    if (pasoAsistencia) {
+                                      avanzarAPasoComentario(goleadorId!, undefined, jug.id);
+                                    } else if (tipoSeleccionado === 'gol' && equipoIncidencia === 'propio') {
+                                      if (subtipoGol === 'penal' || subtipoGol === 'autogol') {
+                                        avanzarAPasoComentario(jug.id);
+                                      } else {
+                                        setGoleadorId(jug.id);
+                                        setPasoAsistencia(true);
+                                      }
+                                    } else if (tipoSeleccionado === 'cambio') {
+                                      if (pasoSustitucion === 1) {
+                                        setJugadorSaleId(jug.id);
+                                        setPasoSustitucion(2);
+                                        setFiltroBuscador('');
+                                      } else {
+                                        avanzarAPasoComentario(jugadorSaleId!, jug.id);
+                                      }
+                                    } else {
+                                      avanzarAPasoComentario(jug.id);
+                                    }
+                                  }}
+                                  className="w-full p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c] hover:border-[#3ddc84] hover:bg-[#243d2c]/40 transition-all flex items-center justify-between text-left cursor-pointer group"
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="font-display font-bold text-base text-[#3ddc84] w-8 h-8 rounded-lg bg-[#182a1f] flex items-center justify-center shrink-0">
+                                      #{c.numero || jug.numero}
+                                    </span>
+                                    <div>
+                                      <span className="text-xs font-semibold text-white group-hover:text-[#3ddc84] transition-colors block">
+                                        {jug.nombre}
+                                      </span>
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        <span className="text-[10px] text-[#9aa89f]">
+                                          {c.posicion_tactica || jug.posicion}
+                                        </span>
+                                        {amarillasPropias.get(c.jugador_id) === 1 && (
+                                          <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
+                                            1ª Amarilla previa
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <ChevronRight className="w-4 h-4 text-[#9aa89f] group-hover:text-white" />
+                                </button>
+                              );
+                            });
+                          })()
+                        ) : (
+                          (() => {
+                            let rivalesFiltrados = draft.rivales;
+
+                            if (tipoSeleccionado === 'doble_amarilla') {
+                              rivalesFiltrados = draft.rivales.filter(r => 
+                                (amarillasRivales.get(String(r.numero)) === 1 || amarillasRivales.get(r.id) === 1) &&
+                                !expulsadosRivalesIds.has(String(r.numero)) &&
+                                !expulsadosRivalesIds.has(r.id)
+                              );
+                            } else {
+                              rivalesFiltrados = draft.rivales.filter(r => 
+                                !expulsadosRivalesIds.has(String(r.numero)) && !expulsadosRivalesIds.has(r.id)
+                              );
+                            }
+
+                            if (rivalesFiltrados.length === 0) {
+                              return (
+                                <div className="p-4 rounded-xl bg-[#0f1712] border border-amber-500/30 text-center my-2">
+                                  <AlertTriangle className="w-5 h-5 text-amber-400 mx-auto mb-1.5" />
+                                  <p className="text-xs text-amber-300 font-semibold">
+                                    {tipoSeleccionado === 'doble_amarilla'
+                                      ? `Ningún jugador de ${draft.partido.rival} tiene 1 tarjeta amarilla previa para registrar una 2ª amarilla.`
+                                      : `No hay jugadores rivales disponibles.`}
+                                  </p>
+                                  {tipoSeleccionado === 'doble_amarilla' && (
+                                    <p className="text-[11px] text-[#9aa89f] mt-1">
+                                      La 2ª amarilla sólo se puede aplicar a futbolistas que ya cuenten con 1 amonestación previa en el partido.
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            }
+
+                            return rivalesFiltrados
+                              .filter(r => 
+                                !filtroBuscador || 
+                                String(r.numero).includes(filtroBuscador) || 
+                                r.nombre.toLowerCase().includes(filtroBuscador.toLowerCase())
+                              )
+                              .map(r => (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  onClick={() => avanzarAPasoComentario(String(r.numero))}
+                                  style={{ borderColor: `${colorRivalConfig}40` }}
+                                  className="w-full p-2.5 rounded-xl bg-[#0f1712] border hover:opacity-95 transition-all flex items-center justify-between text-left cursor-pointer group"
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <span 
+                                      style={{ backgroundColor: `${colorRivalConfig}26`, color: colorRivalConfig }}
+                                      className="font-display font-bold text-base w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                                    >
+                                      #{r.numero}
+                                    </span>
+                                    <div>
+                                      <span 
+                                        className="text-xs font-semibold text-white transition-colors block"
+                                      >
+                                        {r.nombre ? r.nombre : `Dorsal #${r.numero}`}
+                                      </span>
+                                      {(amarillasRivales.get(String(r.numero)) === 1 || amarillasRivales.get(r.id) === 1) && (
+                                        <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">
+                                          1ª Amarilla previa
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <ChevronRight className="w-4 h-4 text-[#9aa89f] group-hover:text-white" />
+                                </button>
+                              ));
+                          })()
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
           </div>
@@ -2132,6 +2551,243 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: EDITAR INCIDENCIA EN VIVO                                        */}
+      {/* ========================================================================= */}
+      {modalEditarIncidenciaVivo && incidenciaEditandoVivo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#182a1f] border border-[#243d2c] rounded-2xl w-full max-w-lg p-5 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#243d2c] pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-[#3ddc84]" />
+                <h3 className="font-display font-bold text-base sm:text-lg text-white uppercase tracking-wider">
+                  Editar Incidencia en Vivo
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setModalEditarIncidenciaVivo(false);
+                  setIncidenciaEditandoVivo(null);
+                }}
+                className="text-[#9aa89f] hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarEdicionVivo} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                    Tiempo
+                  </label>
+                  <select
+                    value={editTiempoVivo}
+                    onChange={e => setEditTiempoVivo(Number(e.target.value) as 1 | 2)}
+                    className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                  >
+                    <option value={1}>1º Tiempo (1T)</option>
+                    <option value={2}>2º Tiempo (2T)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                    Minuto
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={130}
+                    required
+                    value={editMinutoVivo}
+                    onChange={e => setEditMinutoVivo(Math.max(1, Number(e.target.value)))}
+                    className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                    Tipo de Jugada
+                  </label>
+                  <select
+                    value={editTipoVivo}
+                    onChange={e => setEditTipoVivo(e.target.value as TipoIncidencia)}
+                    className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                  >
+                    <option value="gol">⚽ Gol</option>
+                    <option value="autogol">🥅 Autogol</option>
+                    <option value="tiro_arco">🎯 Tiro al Arco</option>
+                    <option value="tiro">💨 Tiro Fuera</option>
+                    <option value="falta">⚠️ Falta</option>
+                    <option value="amarilla">🟨 Tarjeta Amarilla</option>
+                    <option value="doble_amarilla">🟨🟥 Doble Amarilla</option>
+                    <option value="roja_directa">🟥 Roja Directa</option>
+                    <option value="corner">🚩 Córner</option>
+                    <option value="cambio">🔄 Sustitución / Cambio</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                    Equipo
+                  </label>
+                  <select
+                    value={editEquipoVivo}
+                    onChange={e => setEditEquipoVivo(e.target.value as EquipoIncidencia)}
+                    className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                  >
+                    <option value="propio">{nombreClub}</option>
+                    <option value="rival">{draft.partido.rival}</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Opción de Gol de Penal */}
+              {editTipoVivo === 'gol' && (
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c]">
+                  <input
+                    type="checkbox"
+                    id="chk-edit-penal-vivo"
+                    checked={editEsPenalVivo}
+                    onChange={e => setEditEsPenalVivo(e.target.checked)}
+                    className="w-4 h-4 rounded text-[#3ddc84] focus:ring-0 cursor-pointer"
+                  />
+                  <label htmlFor="chk-edit-penal-vivo" className="text-xs font-semibold text-white cursor-pointer flex items-center gap-1.5">
+                    <span>🎯</span> ¿Fue Gol de Penal?
+                  </label>
+                </div>
+              )}
+
+              {/* Jugador principal */}
+              {editEquipoVivo === 'propio' ? (
+                <div>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                    {editTipoVivo === 'cambio' ? 'Jugador que SALE' : `Jugador ${nombreClub}`}
+                  </label>
+                  <select
+                    value={editJugadorIdVivo}
+                    onChange={e => setEditJugadorIdVivo(e.target.value)}
+                    className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                    required={editTipoVivo !== 'corner'}
+                  >
+                    <option value="">-- Seleccionar futbolista --</option>
+                    {draft.convocados.map(c => {
+                      const j = jugadoresMap.get(c.jugador_id);
+                      return (
+                        <option key={c.jugador_id} value={c.jugador_id}>
+                          #{c.numero || j?.numero} {j?.nombre || 'Jugador'} {c.titular ? '(Titular)' : '(Suplente)'}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                    Dorsal / Nombre del Rival
+                  </label>
+                  <input
+                    type="text"
+                    value={editJugadorIdVivo}
+                    onChange={e => setEditJugadorIdVivo(e.target.value)}
+                    placeholder="Ej: 9 o Carlos"
+                    className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                  />
+                </div>
+              )}
+
+              {/* Jugador secundario (Asistencia o Cambio Entra) */}
+              {editTipoVivo === 'gol' && editEquipoVivo === 'propio' && (
+                <div>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                    Asistencia (Opcional)
+                  </label>
+                  <select
+                    value={editJugadorSecundarioIdVivo}
+                    onChange={e => setEditJugadorSecundarioIdVivo(e.target.value)}
+                    className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                  >
+                    <option value="">Sin Asistencia / Jugada individual</option>
+                    {draft.convocados
+                      .filter(c => c.jugador_id !== editJugadorIdVivo)
+                      .map(c => {
+                        const j = jugadoresMap.get(c.jugador_id);
+                        return (
+                          <option key={c.jugador_id} value={c.jugador_id}>
+                            #{c.numero || j?.numero} {j?.nombre || 'Jugador'}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+              )}
+
+              {editTipoVivo === 'cambio' && editEquipoVivo === 'propio' && (
+                <div>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                    Jugador que ENTRA
+                  </label>
+                  <select
+                    value={editJugadorSecundarioIdVivo}
+                    onChange={e => setEditJugadorSecundarioIdVivo(e.target.value)}
+                    className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                    required
+                  >
+                    <option value="">-- Seleccionar jugador que entra --</option>
+                    {draft.convocados
+                      .filter(c => c.jugador_id !== editJugadorIdVivo)
+                      .map(c => {
+                        const j = jugadoresMap.get(c.jugador_id);
+                        return (
+                          <option key={c.jugador_id} value={c.jugador_id}>
+                            #{c.numero || j?.numero} {j?.nombre || 'Jugador'}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                  Detalle / Comentario
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: de cabeza, falta táctica, mano..."
+                  value={editDetalleVivo}
+                  onChange={e => setEditDetalleVivo(e.target.value)}
+                  className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#243d2c]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalEditarIncidenciaVivo(false);
+                    setIncidenciaEditandoVivo(null);
+                  }}
+                  className="px-4 py-2 bg-transparent border border-[#243d2c] text-[#9aa89f] hover:text-white rounded-xl cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#3ddc84] hover:bg-[#32b86e] text-[#0a100d] font-bold rounded-xl cursor-pointer transition-colors shadow-md"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

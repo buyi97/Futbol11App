@@ -50,6 +50,7 @@ type CampoOrden =
   | 'asistencias' 
   | 'tirosTotal'
   | 'tirosArco' 
+  | 'atajadas'
   | 'faltas' 
   | 'minutosJugados' 
   | 'partidosJugados' 
@@ -83,13 +84,31 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
     };
   }, []);
 
-  // Filtrado por Torneo / Temporada
-  const partidosFiltradosPorTorneo = filtroTorneo === 'todos'
-    ? partidos
-    : partidos.filter(p => p.torneo_id === filtroTorneo);
+  // Filtrado por Torneo / Temporada: partidos, incidencias y convocados correspondientes
+  const partidosFiltradosPorTorneo = React.useMemo(() => {
+    return filtroTorneo === 'todos'
+      ? partidos
+      : partidos.filter(p => p.torneo_id === filtroTorneo);
+  }, [filtroTorneo, partidos]);
 
-  const stats = calcularEstadisticasAcumuladas(jugadores, partidosFiltradosPorTorneo, convocados, incidencias);
-  const resumen = calcularResumenEquipo(partidosFiltradosPorTorneo, incidencias);
+  const partidosIdsSet = React.useMemo(() => {
+    return new Set(partidosFiltradosPorTorneo.map(p => p.id));
+  }, [partidosFiltradosPorTorneo]);
+
+  const incidenciasFiltradas = React.useMemo(() => {
+    return filtroTorneo === 'todos'
+      ? incidencias
+      : incidencias.filter(i => partidosIdsSet.has(i.partido_id));
+  }, [filtroTorneo, incidencias, partidosIdsSet]);
+
+  const convocadosFiltrados = React.useMemo(() => {
+    return filtroTorneo === 'todos'
+      ? convocados
+      : convocados.filter(c => partidosIdsSet.has(c.partido_id));
+  }, [filtroTorneo, convocados, partidosIdsSet]);
+
+  const stats = calcularEstadisticasAcumuladas(jugadores, partidosFiltradosPorTorneo, convocadosFiltrados, incidenciasFiltradas);
+  const resumen = calcularResumenEquipo(partidosFiltradosPorTorneo, incidenciasFiltradas);
 
   const jugadorPlantelMap = React.useMemo(() => {
     const map = new Map<string, Jugador>();
@@ -139,7 +158,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
   // Jugador seleccionado para el modal de detalle
   const jugadorSeleccionado = jugadorModalId ? jugadores.find(j => j.id === jugadorModalId) : null;
   const statsJugadorSeleccionado = jugadorModalId ? stats.find(s => s.jugadorId === jugadorModalId) : null;
-  const historialJugadorSeleccionado = jugadorModalId ? obtenerHistorialDetalladoJugador(jugadorModalId, partidos, convocados, incidencias, jugadores) : [];
+  const historialJugadorSeleccionado = jugadorModalId ? obtenerHistorialDetalladoJugador(jugadorModalId, partidosFiltradosPorTorneo, convocadosFiltrados, incidenciasFiltradas, jugadores) : [];
 
   // Top 5 goleadores para el gráfico de barras
   const topGoleadores = [...stats]
@@ -525,6 +544,18 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 </th>
 
                 <th 
+                  onClick={() => cambiarOrden('atajadas')}
+                  className="py-2 sm:py-2.5 px-1 sm:px-2 text-right cursor-pointer hover:text-white transition-colors select-none"
+                  title="Atajadas / Paradas del arquero"
+                >
+                  <div className="flex items-center justify-end gap-0.5 sm:gap-1">
+                    <span className="hidden sm:inline">Atajadas 🧤</span>
+                    <span className="sm:hidden inline">🧤</span>
+                    <ArrowUpDown className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                  </div>
+                </th>
+
+                <th 
                   onClick={() => cambiarOrden('faltas')}
                   className="py-2 sm:py-2.5 px-1 sm:px-2 text-right cursor-pointer hover:text-white transition-colors select-none"
                 >
@@ -595,8 +626,13 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                       {j.minutosJugados}'
                     </td>
 
-                    <td className="py-2 sm:py-2.5 px-1 sm:px-2 text-right font-display font-bold text-xs sm:text-base text-[#3ddc84]">
-                      {j.goles}
+                    <td className="py-2 sm:py-2.5 px-1 sm:px-2 text-right font-display font-bold text-xs sm:text-base text-[#3ddc84]" title={j.golesPenal && j.golesPenal > 0 ? `${j.goles} goles (${j.golesPenal} de penal)` : undefined}>
+                      <span>{j.goles}</span>
+                      {j.golesPenal && j.golesPenal > 0 ? (
+                        <span className="text-[10px] text-[#ffb703] font-normal block sm:inline sm:ml-1">
+                          ({j.golesPenal}p)
+                        </span>
+                      ) : null}
                     </td>
 
                     <td className="py-2 sm:py-2.5 px-1 sm:px-2 text-right font-display font-bold text-xs sm:text-sm text-zinc-300">
@@ -606,6 +642,14 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                     <td className="py-2 sm:py-2.5 px-1 sm:px-2 text-right font-display text-xs sm:text-sm whitespace-nowrap">
                       <span className="font-bold text-white">{j.tirosTotal}</span>
                       <span className="text-[#3ddc84] font-semibold ml-1">({j.tirosArco})</span>
+                    </td>
+
+                    <td className="py-2 sm:py-2.5 px-1 sm:px-2 text-right font-display text-xs sm:text-sm">
+                      {j.atajadas && j.atajadas > 0 ? (
+                        <span className="font-bold text-[#3ddc84]">{j.atajadas}</span>
+                      ) : (
+                        <span className="text-zinc-600">-</span>
+                      )}
                     </td>
 
                     <td className="py-2 sm:py-2.5 px-1 sm:px-2 text-right font-display font-bold text-xs sm:text-sm text-zinc-300">
@@ -704,8 +748,11 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
 
                 <div className="p-3 rounded-xl bg-[#0f1712] border border-[#243d2c]">
                   <span className="text-[10px] text-[#9aa89f] uppercase font-bold block">Goles & Asistencias</span>
-                  <div className="font-display font-bold text-xl text-[#3ddc84] mt-0.5 flex items-center gap-2">
+                  <div className="font-display font-bold text-xl text-[#3ddc84] mt-0.5 flex items-center gap-1.5 flex-wrap">
                     <span>⚽ {statsJugadorSeleccionado.goles}</span>
+                    {statsJugadorSeleccionado.golesPenal && statsJugadorSeleccionado.golesPenal > 0 ? (
+                      <span className="text-[11px] text-[#ffb703] font-normal">({statsJugadorSeleccionado.golesPenal} penal)</span>
+                    ) : null}
                     <span className="text-zinc-300 text-sm">👟 {statsJugadorSeleccionado.asistencias}</span>
                   </div>
                   <span className="text-[10px] text-[#9aa89f]">
@@ -714,8 +761,13 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
                 </div>
 
                 <div className="p-3 rounded-xl bg-[#0f1712] border border-[#243d2c]">
-                  <span className="text-[10px] text-[#9aa89f] uppercase font-bold block">Tiros: Totales (Al Arco)</span>
-                  <div className="font-display font-bold text-xl text-white mt-0.5 flex items-center gap-1.5">
+                  <span className="text-[10px] text-[#9aa89f] uppercase font-bold block">
+                    {jugadorSeleccionado.posicion === 'Arquero' || (statsJugadorSeleccionado.atajadas || 0) > 0 ? 'Atajadas & Tiros' : 'Tiros: Totales (Al Arco)'}
+                  </span>
+                  <div className="font-display font-bold text-xl text-white mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    {(jugadorSeleccionado.posicion === 'Arquero' || (statsJugadorSeleccionado.atajadas || 0) > 0) && (
+                      <span className="text-[#3ddc84]">🧤 {statsJugadorSeleccionado.atajadas || 0}</span>
+                    )}
                     <span>🎯 {statsJugadorSeleccionado.tirosTotal}</span>
                     <span className="text-[#3ddc84] text-sm">({statsJugadorSeleccionado.tirosArco})</span>
                   </div>
@@ -791,13 +843,19 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({
 
                             {h.goles > 0 && (
                               <span className="text-[#3ddc84] font-bold">
-                                ⚽ {h.goles} {h.goles === 1 ? 'Gol' : 'Goles'}
+                                ⚽ {h.goles} {h.goles === 1 ? 'Gol' : 'Goles'}{h.golesPenal && h.golesPenal > 0 ? ` (${h.golesPenal}p)` : ''}
                               </span>
                             )}
 
                             {h.asistencias > 0 && (
                               <span className="text-zinc-200 font-semibold">
                                 👟 {h.asistencias} {h.asistencias === 1 ? 'Asistencia' : 'Asistencias'}
+                              </span>
+                            )}
+
+                            {h.atajadas !== undefined && h.atajadas > 0 && (
+                              <span className="text-[#3ddc84] font-semibold">
+                                🧤 {h.atajadas} {h.atajadas === 1 ? 'atajada' : 'atajadas'}
                               </span>
                             )}
 

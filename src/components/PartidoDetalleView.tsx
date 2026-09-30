@@ -137,6 +137,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   const [nuevaTiempo, setNuevaTiempo] = useState<1 | 2>(1);
   const [nuevaMinuto, setNuevaMinuto] = useState<number>(1);
   const [nuevaTipo, setNuevaTipo] = useState<TipoIncidencia>('gol');
+  const [nuevaEsPenal, setNuevaEsPenal] = useState(false);
   const [nuevaEquipo, setNuevaEquipo] = useState<EquipoIncidencia>('propio');
   const [nuevaJugadorId, setNuevaJugadorId] = useState<string>('');
   const [nuevaJugadorSecundarioId, setNuevaJugadorSecundarioId] = useState<string>('');
@@ -147,6 +148,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   const [editTiempo, setEditTiempo] = useState<1 | 2>(1);
   const [editMinuto, setEditMinuto] = useState<number>(1);
   const [editTipo, setEditTipo] = useState<TipoIncidencia>('gol');
+  const [editEsPenal, setEditEsPenal] = useState(false);
   const [editEquipo, setEditEquipo] = useState<EquipoIncidencia>('propio');
   const [editJugadorId, setEditJugadorId] = useState<string>('');
   const [editJugadorSecundarioId, setEditJugadorSecundarioId] = useState<string>('');
@@ -340,20 +342,24 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   const colorColumnaVisitante = (esNeutral || esLocalPropio) ? colorRivalElegido : colorClub;
 
   const incidenciasLocal = incidenciasPrincipales.filter(i => {
-    return (esNeutral || esLocalPropio) ? i.equipo === 'propio' : i.equipo === 'rival';
+    const equipoBeneficiado = i.tipo === 'autogol' ? (i.equipo === 'propio' ? 'rival' : 'propio') : i.equipo;
+    return (esNeutral || esLocalPropio) ? equipoBeneficiado === 'propio' : equipoBeneficiado === 'rival';
   });
 
   const incidenciasVisitante = incidenciasPrincipales.filter(i => {
-    return (esNeutral || esLocalPropio) ? i.equipo === 'rival' : i.equipo === 'propio';
+    const equipoBeneficiado = i.tipo === 'autogol' ? (i.equipo === 'propio' ? 'rival' : 'propio') : i.equipo;
+    return (esNeutral || esLocalPropio) ? equipoBeneficiado === 'rival' : equipoBeneficiado === 'propio';
   });
 
   const renderItemIncidenciaEncabezado = (inc: Incidencia) => {
     const esPropio = inc.equipo === 'propio';
     const conv = esPropio ? convocadosMap.get(inc.jugador_id || '') : undefined;
     const jug = esPropio ? jugadoresMap.get(inc.jugador_id || '') : undefined;
-    const idAsist = inc.asistencia_id || (inc.tipo === 'gol' ? inc.jugador_id_secundario : undefined);
-    const convSec = esPropio && idAsist ? convocadosMap.get(idAsist) : undefined;
-    const jugSec = esPropio && idAsist ? jugadoresMap.get(idAsist) : undefined;
+    const idSecundario = inc.tipo === 'cambio'
+      ? inc.jugador_id_secundario
+      : (inc.asistencia_id || (inc.tipo === 'gol' ? inc.jugador_id_secundario : undefined));
+    const convSec = esPropio && idSecundario ? convocadosMap.get(idSecundario) : undefined;
+    const jugSec = esPropio && idSecundario ? jugadoresMap.get(idSecundario) : undefined;
 
     const rivalObj = !esPropio ? rivales.find(r => r.id === inc.jugador_id || String(r.numero) === inc.jugador_id) : undefined;
 
@@ -362,26 +368,39 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
     let detalleSecundario = '';
 
     if (inc.tipo === 'gol') {
-      icono = '⚽';
+      const esPenal = inc.es_penal || inc.detalle?.toLowerCase().includes('penal');
+      icono = esPenal ? '🎯⚽' : '⚽';
       if (esPropio) {
         const num = conv?.numero ?? jug?.numero;
         const nombre = jug?.nombre || 'Jugador';
-        textoPrincipal = num ? `#${num} ${nombre}` : nombre;
-        if (convSec || jugSec) {
+        textoPrincipal = `${num ? `#${num} ` : ''}${nombre}${esPenal ? ' (Penal)' : ''}`;
+        if (!esPenal && (convSec || jugSec)) {
           const numSec = convSec?.numero ?? jugSec?.numero;
           const nomSec = jugSec?.nombre || '';
           detalleSecundario = `Asist: ${numSec ? `#${numSec} ` : ''}${nomSec}`;
+        } else if (esPenal && inc.detalle && !inc.detalle.toLowerCase().trim().endsWith('penal')) {
+          detalleSecundario = inc.detalle;
         }
       } else {
-        if (rivalObj?.nombre) {
-          textoPrincipal = `${rivalObj.nombre} (#${rivalObj.numero})`;
-        } else {
-          textoPrincipal = `Dorsal #${rivalObj?.numero || inc.jugador_id || ''} rival`;
+        const nomRival = rivalObj?.nombre ? `${rivalObj.nombre} (#${rivalObj.numero})` : `Dorsal #${rivalObj?.numero || inc.jugador_id || ''} rival`;
+        textoPrincipal = `${nomRival}${esPenal ? ' (Penal)' : ''}`;
+        if (inc.detalle) {
+          detalleSecundario = inc.detalle;
         }
       }
     } else if (inc.tipo === 'autogol') {
       icono = '⚽🥅';
-      textoPrincipal = esPropio ? `Autogol #${conv?.numero ?? jug?.numero ?? ''} (e/c)` : 'Autogol rival (e/c)';
+      if (esPropio) {
+        const num = conv?.numero ?? jug?.numero;
+        const nombre = jug?.nombre || 'Jugador';
+        textoPrincipal = `Autogol ${num ? `#${num} ` : ''}${nombre} (e/c)`;
+        detalleSecundario = 'Gol en contra propio (suma al rival)';
+      } else {
+        const num = rivalObj?.numero || (inc.jugador_id && inc.jugador_id !== 'undefined' ? inc.jugador_id : '');
+        const nom = rivalObj?.nombre || '';
+        textoPrincipal = `Autogol ${num ? `#${num} ` : ''}${nom ? nom + ' ' : ''}(e/c)`;
+        detalleSecundario = 'Gol en contra rival (suma a favor)';
+      }
     } else if (inc.tipo === 'amarilla') {
       icono = '🟨';
       if (esPropio) {
@@ -410,9 +429,9 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
       icono = '🔄';
       if (esPropio) {
         const numSale = conv?.numero ?? jug?.numero;
-        const nomSale = jug?.nombre || 'Sale';
+        const nomSale = jug?.nombre || 'Jugador';
         const numEntra = convSec?.numero ?? jugSec?.numero;
-        const nomEntra = jugSec?.nombre || 'Entra';
+        const nomEntra = jugSec?.nombre || 'Jugador';
         textoPrincipal = `Entra: ${numEntra ? `#${numEntra} ` : ''}${nomEntra}`;
         detalleSecundario = `Sale: ${numSale ? `#${numSale} ` : ''}${nomSale}`;
       } else {
@@ -546,6 +565,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
       segundo: 0,
       minuto_display: `${nuevaMinuto}'`,
       tipo: nuevaTipo,
+      es_penal: nuevaTipo === 'gol' && nuevaEsPenal ? true : undefined,
       equipo: nuevaEquipo,
       jugador_id: nuevaJugadorId || undefined,
       jugador_id_secundario: (nuevaTipo === 'gol' || nuevaTipo === 'cambio') && nuevaJugadorSecundarioId ? nuevaJugadorSecundarioId : undefined,
@@ -579,6 +599,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
     StorageService.agregarAColaSync('guardarIncidencia', nuevaInc);
 
     setModalNuevaIncidencia(false);
+    setNuevaEsPenal(false);
     setNuevaDetalle('');
     setNuevaJugadorId('');
     setNuevaJugadorSecundarioId('');
@@ -594,6 +615,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
     setEditTiempo(inc.tiempo);
     setEditMinuto(inc.minuto);
     setEditTipo(inc.tipo);
+    setEditEsPenal(inc.es_penal || (inc.tipo === 'gol' && !!inc.detalle?.toLowerCase().includes('penal')));
     setEditEquipo(inc.equipo);
     setEditJugadorId(inc.jugador_id || '');
     setEditJugadorSecundarioId(inc.jugador_id_secundario || inc.asistencia_id || '');
@@ -611,6 +633,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
       minuto: Number(editMinuto),
       minuto_display: `${editMinuto}'`,
       tipo: editTipo,
+      es_penal: editTipo === 'gol' && editEsPenal ? true : undefined,
       equipo: editEquipo,
       jugador_id: editJugadorId || undefined,
       jugador_id_secundario: (editTipo === 'gol' || editTipo === 'cambio') && editJugadorSecundarioId ? editJugadorSecundarioId : undefined,
@@ -957,12 +980,16 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
           ) : (
             <div className="relative space-y-2.5 sm:space-y-3 before:hidden sm:before:block sm:before:absolute sm:before:inset-y-0 sm:before:left-1/2 sm:before:-translate-x-1/2 sm:before:w-0.5 sm:before:bg-[#243d2c]">
               {incidenciasPrincipales.map((inc, index) => {
+                const esAutogol = inc.tipo === 'autogol';
+                const esPropioEfectivo = esAutogol ? inc.equipo !== 'propio' : inc.equipo === 'propio';
                 const esPropio = inc.equipo === 'propio';
                 const conv = esPropio ? convocadosMap.get(inc.jugador_id || '') : undefined;
                 const jug = esPropio ? jugadoresMap.get(inc.jugador_id || '') : undefined;
-                const idAsist = inc.asistencia_id || (inc.tipo === 'gol' ? inc.jugador_id_secundario : undefined);
-                const convSec = esPropio && idAsist ? convocadosMap.get(idAsist) : undefined;
-                const jugSec = esPropio && idAsist ? jugadoresMap.get(idAsist) : undefined;
+                const idSecundario = inc.tipo === 'cambio'
+                  ? inc.jugador_id_secundario
+                  : (inc.asistencia_id || (inc.tipo === 'gol' ? inc.jugador_id_secundario : undefined));
+                const convSec = esPropio && idSecundario ? convocadosMap.get(idSecundario) : undefined;
+                const jugSec = esPropio && idSecundario ? jugadoresMap.get(idSecundario) : undefined;
                 const rivalObj = !esPropio ? rivalesLocales.find(r => r.id === inc.jugador_id || String(r.numero) === inc.jugador_id) : undefined;
 
                 // Detectar si esta incidencia es la primera del 2T y la anterior era del 1T
@@ -973,26 +1000,42 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                 let detalleSecundario = '';
 
                 if (inc.tipo === 'gol') {
-                  icono = '⚽';
+                  const esPenal = inc.es_penal || inc.detalle?.toLowerCase().includes('penal');
+                  icono = esPenal ? '🎯⚽' : '⚽';
                   if (esPropio) {
                     const num = conv?.numero ?? jug?.numero;
                     const nombre = jug?.nombre || 'Jugador';
-                    textoPrincipal = num ? `#${num} ${nombre}` : nombre;
-                    if (convSec || jugSec) {
+                    textoPrincipal = `${num ? `#${num} ` : ''}${nombre}${esPenal ? ' (Penal)' : ''}`;
+                    if (!esPenal && (convSec || jugSec)) {
                       const numSec = convSec?.numero ?? jugSec?.numero;
                       const nomSec = jugSec?.nombre || '';
                       detalleSecundario = `Asist: ${numSec ? `#${numSec} ` : ''}${nomSec}`;
+                    } else if (esPenal && inc.detalle && !inc.detalle.toLowerCase().trim().endsWith('penal')) {
+                      detalleSecundario = inc.detalle;
                     }
                   } else {
                     if (rivalObj?.nombre) {
-                      textoPrincipal = `${rivalObj.nombre} (#${rivalObj.numero})`;
+                      textoPrincipal = `${rivalObj.nombre} (#${rivalObj.numero})${esPenal ? ' (Penal)' : ''}`;
                     } else {
-                      textoPrincipal = `Dorsal #${rivalObj?.numero || inc.jugador_id || ''} rival`;
+                      textoPrincipal = `Dorsal #${rivalObj?.numero || inc.jugador_id || ''} rival${esPenal ? ' (Penal)' : ''}`;
+                    }
+                    if (inc.detalle) {
+                      detalleSecundario = inc.detalle;
                     }
                   }
                 } else if (inc.tipo === 'autogol') {
                   icono = '⚽🥅';
-                  textoPrincipal = esPropio ? `Autogol #${conv?.numero ?? jug?.numero ?? ''} (e/c)` : 'Autogol rival (e/c)';
+                  if (esPropio) {
+                    const num = conv?.numero ?? jug?.numero;
+                    const nombre = jug?.nombre || 'Jugador';
+                    textoPrincipal = `Autogol ${num ? `#${num} ` : ''}${nombre} (e/c)`;
+                    detalleSecundario = `Gol para ${partidoEditado.rival} por autogol en contra`;
+                  } else {
+                    const num = rivalObj?.numero || (inc.jugador_id && inc.jugador_id !== 'undefined' ? inc.jugador_id : '');
+                    const nom = rivalObj?.nombre || '';
+                    textoPrincipal = `Autogol rival ${num ? `#${num} ` : ''}${nom ? nom + ' ' : ''}(e/c)`;
+                    detalleSecundario = `Gol a favor de ${nombreClub} por autogol rival`;
+                  }
                 } else if (inc.tipo === 'amarilla') {
                   icono = '🟨';
                   if (esPropio) {
@@ -1021,9 +1064,9 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                   icono = '🔄';
                   if (esPropio) {
                     const numSale = conv?.numero ?? jug?.numero;
-                    const nomSale = jug?.nombre || 'Sale';
+                    const nomSale = jug?.nombre || 'Jugador';
                     const numEntra = convSec?.numero ?? jugSec?.numero;
-                    const nomEntra = jugSec?.nombre || 'Entra';
+                    const nomEntra = jugSec?.nombre || (inc.detalle ? inc.detalle : 'Jugador');
                     textoPrincipal = `Entra: ${numEntra ? `#${numEntra} ` : ''}${nomEntra}`;
                     detalleSecundario = `Sale: ${numSale ? `#${numSale} ` : ''}${nomSale}`;
                   } else {
@@ -1045,22 +1088,22 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
 
                     <div
                       className={`flex items-center gap-3 sm:gap-4 w-full ${
-                        esPropio ? 'sm:flex-row' : 'sm:flex-row-reverse'
+                        esPropioEfectivo ? 'sm:flex-row' : 'sm:flex-row-reverse'
                       }`}
                     >
                       {/* Tarjeta del evento alineada al lado correspondiente */}
-                      <div className={`flex-1 ${esPropio ? 'text-left' : 'text-right'}`}>
+                      <div className={`flex-1 ${esPropioEfectivo ? 'text-left' : 'text-right'}`}>
                         <div
                           className="inline-flex items-center gap-2 py-1.5 px-3 rounded-xl border transition-all bg-[#0f1712]/90 border-[#243d2c]"
                           style={{
-                            borderLeftWidth: esPropio ? '3px' : undefined,
-                            borderLeftColor: esPropio ? colorClub : undefined,
-                            borderRightWidth: !esPropio ? '3px' : undefined,
-                            borderRightColor: !esPropio ? colorRivalElegido : undefined,
+                            borderLeftWidth: esPropioEfectivo ? '3px' : undefined,
+                            borderLeftColor: esPropioEfectivo ? colorClub : undefined,
+                            borderRightWidth: !esPropioEfectivo ? '3px' : undefined,
+                            borderRightColor: !esPropioEfectivo ? colorRivalElegido : undefined,
                           }}
                         >
-                          {esPropio && <span className="text-base shrink-0">{icono}</span>}
-                          <div className={`min-w-0 ${esPropio ? 'text-left' : 'text-right'}`}>
+                          {esPropioEfectivo && <span className="text-base shrink-0">{icono}</span>}
+                          <div className={`min-w-0 ${esPropioEfectivo ? 'text-left' : 'text-right'}`}>
                             <div className="text-xs font-semibold text-white truncate max-w-[200px] sm:max-w-[260px]">
                               {textoPrincipal}
                             </div>
@@ -1070,7 +1113,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                               </div>
                             )}
                           </div>
-                          {!esPropio && <span className="text-base shrink-0">{icono}</span>}
+                          {!esPropioEfectivo && <span className="text-base shrink-0">{icono}</span>}
                         </div>
                       </div>
 
@@ -1079,10 +1122,10 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                         className="shrink-0 z-10 px-2.5 h-8 rounded-full flex items-center justify-center gap-1 font-mono font-bold text-xs shadow-md border"
                         style={{
                           backgroundColor: '#0f1712',
-                          borderColor: esPropio ? colorClub : colorRivalElegido,
-                          color: esPropio ? colorClub : colorRivalElegido,
+                          borderColor: esPropioEfectivo ? colorClub : colorRivalElegido,
+                          color: esPropioEfectivo ? colorClub : colorRivalElegido,
                         }}
-                        title={`${inc.minuto}' (${inc.tiempo || 1}T) • ${esPropio ? nombreClub : partidoEditado.rival}`}
+                        title={`${inc.minuto}' (${inc.tiempo || 1}T) • ${esPropioEfectivo ? nombreClub : partidoEditado.rival}`}
                       >
                         <span>{inc.minuto}'</span>
                         <span className="text-[10px] font-sans font-bold opacity-80">
@@ -1528,6 +1571,9 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                 const asistObj = idAsist ? jugadoresMap.get(idAsist) : null;
                 const convocadoAsist = idAsist ? convocados.find(c => c.jugador_id === idAsist) : null;
                 const rivalObj = rivales?.find(r => String(r.numero) === String(inc.jugador_id) || r.id === inc.jugador_id);
+                const esAutogol = inc.tipo === 'autogol';
+                const esPropioEfectivo = esAutogol ? inc.equipo !== 'propio' : inc.equipo === 'propio';
+                const esPenal = inc.tipo === 'gol' && (inc.es_penal || inc.detalle?.toLowerCase().includes('penal'));
                 const esPropio = inc.equipo === 'propio';
 
                 return (
@@ -1538,7 +1584,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                     <div className="w-10 text-center shrink-0">
                       <span 
                         className="font-display font-bold text-sm"
-                        style={{ color: esPropio ? colorClub : colorRivalElegido }}
+                        style={{ color: esPropioEfectivo ? colorClub : colorRivalElegido }}
                       >
                         {inc.minuto}'
                       </span>
@@ -1550,8 +1596,8 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <span className="text-sm">
-                          {inc.tipo === 'gol' && '⚽'}
-                          {inc.tipo === 'autogol' && '🥅'}
+                          {inc.tipo === 'gol' && (esPenal ? '🎯⚽' : '⚽')}
+                          {inc.tipo === 'autogol' && '⚽🥅'}
                           {inc.tipo === 'amarilla' && '🟨'}
                           {inc.tipo === 'doble_amarilla' && '🟨🟨'}
                           {inc.tipo === 'roja_directa' && '🟥'}
@@ -1560,20 +1606,27 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                           {inc.tipo === 'tiro_arco' && '🎯'}
                           {inc.tipo === 'corner' && '🚩'}
                           {inc.tipo === 'cambio' && '🔄'}
+                          {inc.tipo === 'atajada' && '🧤'}
                         </span>
                         <span className="text-xs font-bold text-white uppercase">
-                          {inc.tipo === 'cambio' ? 'Cambio' : inc.tipo === 'tiro_arco' ? 'Tiro al Arco' : inc.tipo.replace('_', ' ')}
+                          {inc.tipo === 'cambio' ? 'Cambio' : esPenal ? 'Gol de Penal' : inc.tipo === 'tiro_arco' ? 'Tiro al Arco' : inc.tipo === 'atajada' ? 'Atajada' : inc.tipo.replace('_', ' ')}
                         </span>
                         <span 
                           className="text-[9px] font-semibold px-1 rounded"
-                          style={{ color: esPropio ? colorClub : colorRivalElegido }}
+                          style={{ color: esPropioEfectivo ? colorClub : colorRivalElegido }}
                         >
-                          {esPropio ? nombreClub : (partidoEditado.rival || 'Rival')}
+                          {esPropioEfectivo ? nombreClub : (partidoEditado.rival || 'Rival')}
                         </span>
                       </div>
 
                       <p className="text-[11px] text-[#9aa89f] leading-tight">
-                        {inc.tipo === 'cambio' ? (
+                        {esAutogol ? (
+                          inc.equipo === 'propio' ? (
+                            <>Autogol en contra de #{convocadoObj?.numero || jug?.numero} {jug?.nombre || 'Jugador'} (e/c) • Suma gol para {partidoEditado.rival || 'el Rival'}</>
+                          ) : (
+                            <>Autogol a favor (en contra de rival #{rivalObj?.numero || (inc.jugador_id && inc.jugador_id !== 'undefined' ? inc.jugador_id : '')} {rivalObj?.nombre || ''}) • Suma gol para {nombreClub}</>
+                          )
+                        ) : inc.tipo === 'cambio' ? (
                           <>
                             Sale: #{convocadoObj?.numero || jug?.numero} {jug?.nombre || 'Jugador'} <br />
                             Entra: #{convocadoSecObj?.numero || jugSec?.numero} {jugSec?.nombre || 'Jugador'}
@@ -1583,12 +1636,13 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                         ) : esPropio ? (
                           <>
                             #{convocadoObj?.numero || jug?.numero} {jug?.nombre || 'Jugador del plantel'}
-                            {asistObj && (
+                            {esPenal && <span className="ml-1 text-amber-300 font-bold">(Penal)</span>}
+                            {asistObj && !esPenal && (
                               <span className="ml-1" style={{ color: colorClub }}>
                                 (Asistencia: #{convocadoAsist?.numero || asistObj.numero} {asistObj.nombre})
                               </span>
                             )}
-                            {jugSec && !asistObj && (
+                            {jugSec && !asistObj && !esPenal && (
                               <span className="ml-1" style={{ color: colorClub }}>
                                 (Asistencia: #{convocadoSecObj?.numero || jugSec.numero} {jugSec.nombre})
                               </span>
@@ -1601,9 +1655,10 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                             ) : (
                               <>Dorsal #{rivalObj?.numero || (inc.jugador_id && inc.jugador_id !== 'undefined' ? inc.jugador_id : '')} rival</>
                             )}
+                            {esPenal && <span className="ml-1 text-amber-300 font-bold">(Penal)</span>}
                           </>
                         )}
-                        {inc.detalle && ` • ${inc.detalle}`}
+                        {inc.detalle && !inc.detalle.toLowerCase().trim().endsWith('penal') && ` • ${inc.detalle}`}
                       </p>
                     </div>
 
@@ -1721,6 +1776,29 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                   </select>
                 </div>
               </div>
+
+              {/* Opción de Gol de Penal */}
+              {nuevaTipo === 'gol' && (
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c]">
+                  <input
+                    type="checkbox"
+                    id="chk-nueva-penal"
+                    checked={nuevaEsPenal}
+                    onChange={e => setNuevaEsPenal(e.target.checked)}
+                    className="w-4 h-4 rounded text-[#3ddc84] focus:ring-0 cursor-pointer"
+                  />
+                  <label htmlFor="chk-nueva-penal" className="text-xs font-semibold text-white cursor-pointer flex items-center gap-1.5">
+                    <span>🎯</span> ¿Fue Gol de Penal?
+                  </label>
+                </div>
+              )}
+
+              {/* Aclaración Autogol */}
+              {nuevaTipo === 'autogol' && (
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
+                  ℹ️ <strong>Autogol:</strong> Seleccioná el equipo del jugador que cometió el gol en contra. El tanto se sumará en el marcador del rival y se mostrará en sus incidencias.
+                </div>
+              )}
 
               {/* Selección de Jugador */}
               {nuevaEquipo === 'propio' ? (
@@ -1992,6 +2070,22 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                   </select>
                 </div>
               </div>
+
+              {/* Opción de Gol de Penal */}
+              {editTipo === 'gol' && (
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#0f1712] border border-[#243d2c]">
+                  <input
+                    type="checkbox"
+                    id="chk-edit-penal"
+                    checked={editEsPenal}
+                    onChange={e => setEditEsPenal(e.target.checked)}
+                    className="w-4 h-4 rounded text-[#3ddc84] focus:ring-0 cursor-pointer"
+                  />
+                  <label htmlFor="chk-edit-penal" className="text-xs font-semibold text-white cursor-pointer flex items-center gap-1.5">
+                    <span>🎯</span> ¿Fue Gol de Penal?
+                  </label>
+                </div>
+              )}
 
               {/* Jugador principal */}
               <div>

@@ -253,17 +253,40 @@ export function calcularMinutosPartido(
 
     // Calcular estadísticas individuales del jugador en este partido
     let goles = 0;
+    let golesPenal = 0;
     let asistencias = 0;
     let tirosArco = 0;
     let tirosTotal = 0;
     let faltas = 0;
+    let atajadas = 0;
+
+    const esArquero = jugador.posicion === 'Arquero' || convocado.posicion_tactica === 'ARQ';
 
     incidencias.forEach(inc => {
+      const minAbs = calcularMinutoAbsoluto(inc);
+      const estabaEnCanchaEnMinuto = (minutosJugados > 0) && (
+        (convocado.titular && (ultimoMinutoSalida === undefined || minAbs <= ultimoMinutoSalida)) ||
+        (primerMinutoEntrada !== undefined && minAbs >= primerMinutoEntrada && (ultimoMinutoSalida === undefined || minAbs <= ultimoMinutoSalida))
+      );
+
+      // Si el rival tuvo tiro al arco (que no es gol), es atajada del arquero propio
+      if (esArquero && estabaEnCanchaEnMinuto && inc.equipo === 'rival' && inc.tipo === 'tiro_arco') {
+        atajadas++;
+      }
+
+      // Si se registró explícitamente una atajada para este jugador
+      if (inc.tipo === 'atajada' && coincideJugador(inc.jugador_id)) {
+        atajadas++;
+      }
+
       if (inc.equipo === 'propio') {
         if (inc.tipo === 'gol' && coincideJugador(inc.jugador_id)) {
           goles++;
           tirosArco++;
           tirosTotal++;
+          if (inc.es_penal || inc.detalle?.toLowerCase().includes('penal')) {
+            golesPenal++;
+          }
         }
         if (inc.tipo === 'gol' && (coincideJugador(inc.asistencia_id) || coincideJugador(inc.jugador_id_secundario))) {
           asistencias++;
@@ -295,9 +318,11 @@ export function calcularMinutosPartido(
       amarillas: contadorAmarillas,
       rojas: fueExpulsado ? 1 : 0,
       goles,
+      golesPenal,
       asistencias,
       tirosArco,
       tirosTotal,
+      atajadas,
       faltas,
       tarjetaAmarilla: contadorAmarillas > 0,
       tarjetaRoja: fueExpulsado
@@ -338,9 +363,11 @@ export function calcularEstadisticasAcumuladas(
       minutosJugados: 0,
       promedioMinutos: 0,
       goles: 0,
+      golesPenal: 0,
       asistencias: 0,
       tirosArco: 0,
       tirosTotal: 0,
+      atajadas: 0,
       faltas: 0,
       amarillas: 0,
       rojas: 0,
@@ -363,9 +390,11 @@ export function calcularEstadisticasAcumuladas(
         stat.minutosTotales += d.minutosJugados;
         stat.minutosJugados += d.minutosJugados;
         stat.goles += d.goles;
+        stat.golesPenal = (stat.golesPenal || 0) + (d.golesPenal || 0);
         stat.asistencias += d.asistencias;
         stat.tirosArco += d.tirosArco;
         stat.tirosTotal += d.tirosTotal;
+        stat.atajadas = (stat.atajadas || 0) + (d.atajadas || 0);
         stat.faltas += d.faltas;
         const cantAmarillas = d.amarillas !== undefined ? d.amarillas : (d.tarjetaAmarilla ? 1 : 0);
         const cantRojas = d.rojas !== undefined ? d.rojas : (d.tarjetaRoja ? 1 : 0);
@@ -435,9 +464,11 @@ export function obtenerHistorialDetalladoJugador(
         titular: miDetalle.titular,
         numero: convocado.numero,
         goles: miDetalle.goles,
+        golesPenal: miDetalle.golesPenal || 0,
         asistencias: miDetalle.asistencias,
         tirosArco: miDetalle.tirosArco,
         tirosTotal: miDetalle.tirosTotal,
+        atajadas: miDetalle.atajadas || 0,
         faltas: miDetalle.faltas,
         amarillas: miDetalle.amarillas !== undefined ? miDetalle.amarillas : (miDetalle.tarjetaAmarilla ? 1 : 0),
         rojas: miDetalle.rojas !== undefined ? miDetalle.rojas : (miDetalle.tarjetaRoja ? 1 : 0),

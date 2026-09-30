@@ -106,7 +106,8 @@ export type TipoIncidencia =
   | 'tiro'
   | 'tiro_arco'
   | 'corner'
-  | 'cambio';
+  | 'cambio'
+  | 'atajada';
 
 export type EquipoIncidencia = 'propio' | 'rival';
 
@@ -119,6 +120,7 @@ export interface Incidencia {
   minuto_display?: string; // Ej: "1'", "40'", "40' + 3'", "80' + 2'"
   minuto_agregado?: number; // Si fue en tiempo de descuento
   tipo: TipoIncidencia;
+  es_penal?: boolean; // Si fue gol de penal
   equipo: EquipoIncidencia;
   jugador_id?: string; // ID jugador propio o ID/número del rival (opcional en córner)
   jugador_id_secundario?: string; // En 'cambio': jugador que ingresa. En 'gol': asistencia (opcional).
@@ -155,9 +157,11 @@ export interface MinutosJugadorDetalle {
   amarillas?: number;
   rojas?: number;
   goles: number;
+  golesPenal?: number;
   asistencias: number;
   tirosArco: number;
   tirosTotal: number;
+  atajadas?: number;
   faltas: number;
   tarjetaAmarilla: boolean;
   tarjetaRoja: boolean;
@@ -174,9 +178,11 @@ export interface EstadisticaJugadorAcumulada {
   minutosJugados: number;
   promedioMinutos: number;
   goles: number;
+  golesPenal?: number;
   asistencias: number;
   tirosArco: number;
   tirosTotal: number;
+  atajadas?: number;
   faltas: number;
   amarillas: number;
   rojas: number;
@@ -197,9 +203,11 @@ export interface EventoPartidoJugador {
   titular: boolean;
   numero?: number;
   goles: number;
+  golesPenal?: number;
   asistencias: number;
   tirosArco: number;
   tirosTotal: number;
+  atajadas?: number;
   faltas: number;
   amarillas: number;
   rojas: number;
