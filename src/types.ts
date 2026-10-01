@@ -230,6 +230,7 @@ export interface SesionAuth {
 export interface EventoTrayectoriaMinutos {
   tipo: 'inicio' | 'entrada' | 'salida' | 'expulsion';
   minuto: number;
+  minutoDisplay?: string;
 }
 
 export interface MinutosJugadorDetalle {

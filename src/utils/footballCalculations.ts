@@ -10,7 +10,8 @@ import {
   Incidencia,
   MinutosJugadorDetalle,
   EstadisticaJugadorAcumulada,
-  EventoPartidoJugador
+  EventoPartidoJugador,
+  EventoTrayectoriaMinutos
 } from '../types';
 
 export interface MinutoIncidenciaInfo {
@@ -71,6 +72,11 @@ export function formatearMinutoIncidencia(
   incidencia: Incidencia,
   duracionTiempoMin: number = 40
 ): string {
+  // Sustitución o incidencia en entretiempo (0' 2T)
+  if (incidencia.tiempo === 2 && (incidencia.minuto === 0 || incidencia.minuto_display === "0' 2T")) {
+    return "0' 2T";
+  }
+
   const sufijo = incidencia.tiempo === 1 ? 'PT' : 'ST';
 
   // Si ya tiene un formato relativo explícito con PT o ST, usarlo
@@ -79,7 +85,7 @@ export function formatearMinutoIncidencia(
   }
 
   // Minuto relativo dentro de la etapa
-  let minRelativo = incidencia.minuto || 1;
+  let minRelativo = incidencia.minuto !== undefined ? incidencia.minuto : 1;
   // Compatibilidad con registros antiguos donde 2T se grabó corrido (ej: 50 en partido de 40)
   if (incidencia.tiempo === 2 && minRelativo > duracionTiempoMin) {
     minRelativo = minRelativo - duracionTiempoMin;
@@ -94,7 +100,7 @@ export function formatearMinutoIncidencia(
     return `${duracionTiempoMin}'+${extra}' ${sufijo}`;
   }
 
-  return `${Math.max(1, minRelativo)}' ${sufijo}`;
+  return `${minRelativo}' ${sufijo}`;
 }
 
 /**
@@ -173,7 +179,7 @@ export function calcularMinutosPartido(
     let minutoExpulsion: number | undefined = undefined;
     let motivoSalida: 'cambio' | 'expulsion' | undefined = undefined;
     let contadorAmarillas = 0;
-    const eventosTrayectoria: { tipo: 'inicio' | 'entrada' | 'salida' | 'expulsion'; minuto: number }[] = [];
+    const eventosTrayectoria: EventoTrayectoriaMinutos[] = [];
 
     if (convocado.titular) {
       eventosTrayectoria.push({ tipo: 'inicio', minuto: 0 });
@@ -185,6 +191,8 @@ export function calcularMinutosPartido(
 
       // 1. MANEJO DE CAMBIOS / SUSTITUCIONES
       if (inc.tipo === 'cambio') {
+        const displayCambio = (inc.tiempo === 2 && (inc.minuto === 0 || inc.minuto_display === "0' 2T" || inc.minuto_display === "0'2T")) ? "0' 2T" : undefined;
+
         // Jugador que sale
         if (coincideJugador(inc.jugador_id) && estaEnCancha && !fueExpulsado) {
           if (momentoEntradaActual !== undefined) {
@@ -194,7 +202,7 @@ export function calcularMinutosPartido(
           momentoEntradaActual = undefined;
           ultimoMinutoSalida = minAbsoluto;
           motivoSalida = 'cambio';
-          eventosTrayectoria.push({ tipo: 'salida', minuto: minAbsoluto });
+          eventosTrayectoria.push({ tipo: 'salida', minuto: minAbsoluto, minutoDisplay: displayCambio });
         }
 
         // Jugador que ingresa (sólo si no fue expulsado previamente)
@@ -204,7 +212,7 @@ export function calcularMinutosPartido(
           if (primerMinutoEntrada === undefined) {
             primerMinutoEntrada = minAbsoluto;
           }
-          eventosTrayectoria.push({ tipo: 'entrada', minuto: minAbsoluto });
+          eventosTrayectoria.push({ tipo: 'entrada', minuto: minAbsoluto, minutoDisplay: displayCambio });
         }
       }
 

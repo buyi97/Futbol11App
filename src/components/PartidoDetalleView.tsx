@@ -557,13 +557,15 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   const handleGuardarNuevaIncidencia = (e: React.FormEvent) => {
     e.preventDefault();
 
+    const esEntretiempo = (nuevaTipo === 'cambio' && nuevaTiempo === 2 && Number(nuevaMinuto) === 0);
+
     const nuevaInc: Incidencia = {
       id: 'inc-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
       partido_id: partidoEditado.id,
       tiempo: nuevaTiempo,
       minuto: Number(nuevaMinuto),
       segundo: 0,
-      minuto_display: `${nuevaMinuto}'`,
+      minuto_display: esEntretiempo ? "0' 2T" : `${nuevaMinuto}'`,
       tipo: nuevaTipo,
       es_penal: nuevaTipo === 'gol' && nuevaEsPenal ? true : undefined,
       equipo: nuevaEquipo,
@@ -613,7 +615,7 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
   const handleAbrirEditarIncidencia = (inc: Incidencia) => {
     setIncidenciaEditando(inc);
     setEditTiempo(inc.tiempo);
-    setEditMinuto(inc.minuto);
+    setEditMinuto(inc.minuto !== undefined ? inc.minuto : 1);
     setEditTipo(inc.tipo);
     setEditEsPenal(inc.es_penal || (inc.tipo === 'gol' && !!inc.detalle?.toLowerCase().includes('penal')));
     setEditEquipo(inc.equipo);
@@ -627,11 +629,13 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
     e.preventDefault();
     if (!incidenciaEditando) return;
 
+    const esEntretiempo = (editTipo === 'cambio' && editTiempo === 2 && Number(editMinuto) === 0);
+
     const incidenciaActualizada: Incidencia = {
       ...incidenciaEditando,
       tiempo: editTiempo,
       minuto: Number(editMinuto),
-      minuto_display: `${editMinuto}'`,
+      minuto_display: esEntretiempo ? "0' 2T" : `${editMinuto}'`,
       tipo: editTipo,
       es_penal: editTipo === 'gol' && editEsPenal ? true : undefined,
       equipo: editEquipo,
@@ -1127,10 +1131,16 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                         }}
                         title={`${inc.minuto}' (${inc.tiempo || 1}T) • ${esPropioEfectivo ? nombreClub : partidoEditado.rival}`}
                       >
-                        <span>{inc.minuto}'</span>
-                        <span className="text-[10px] font-sans font-bold opacity-80">
-                          ({inc.tiempo || 1}T)
-                        </span>
+                        {inc.tiempo === 2 && inc.minuto === 0 ? (
+                          <span className="text-xs">0' 2T</span>
+                        ) : (
+                          <>
+                            <span>{inc.minuto}'</span>
+                            <span className="text-[10px] font-sans font-bold opacity-80">
+                              ({inc.tiempo || 1}T)
+                            </span>
+                          </>
+                        )}
                       </div>
 
                       {/* Espacio vacío para equilibrar el otro lado en pantallas medianas/grandes */}
@@ -1586,10 +1596,10 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                         className="font-display font-bold text-sm"
                         style={{ color: esPropioEfectivo ? colorClub : colorRivalElegido }}
                       >
-                        {inc.minuto}'
+                        {inc.tiempo === 2 && inc.minuto === 0 ? "0'" : `${inc.minuto}'`}
                       </span>
-                      <span className="text-[10px] text-[#9aa89f] block -mt-1">
-                        {inc.tiempo}T
+                      <span className="text-[10px] text-[#9aa89f] block -mt-1 font-semibold">
+                        {inc.tiempo === 2 && inc.minuto === 0 ? "2T (ET)" : `${inc.tiempo}T`}
                       </span>
                     </div>
 
@@ -1730,18 +1740,46 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">Minuto</label>
+                  <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
+                    Minuto {nuevaTipo === 'cambio' && nuevaTiempo === 2 ? '(0 para Entretiempo)' : ''}
+                  </label>
                   <input
                     type="number"
-                    min={1}
+                    min={nuevaTipo === 'cambio' && nuevaTiempo === 2 ? 0 : 1}
                     max={130}
                     value={nuevaMinuto}
-                    onChange={e => setNuevaMinuto(Number(e.target.value))}
+                    onChange={e => setNuevaMinuto(nuevaTipo === 'cambio' && nuevaTiempo === 2 ? Math.max(0, Number(e.target.value)) : Math.max(1, Number(e.target.value)))}
                     className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
                     required
                   />
                 </div>
               </div>
+
+              {nuevaTipo === 'cambio' && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNuevaTiempo(2);
+                      setNuevaMinuto(0);
+                    }}
+                    className={`w-full py-2 px-3 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      nuevaTiempo === 2 && nuevaMinuto === 0
+                        ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-[#3ddc84]'
+                        : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f] hover:text-white hover:border-[#3ddc84]/50'
+                    }`}
+                  >
+                    <span>⏸️</span>
+                    <span>Asignar tiempo 0' 2T (Entretiempo)</span>
+                    {nuevaTiempo === 2 && nuevaMinuto === 0 && <span className="text-[10px]">✓ Activo</span>}
+                  </button>
+                  {nuevaTiempo === 2 && nuevaMinuto === 0 && (
+                    <p className="text-[11px] text-[#3ddc84] font-medium mt-1 text-center">
+                      ✓ La sustitución se guardará con tiempo 0' 2T (Entretiempo)
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2019,19 +2057,45 @@ export const PartidoDetalleView: React.FC<PartidoDetalleViewProps> = ({
 
                 <div>
                   <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
-                    Minuto (ej: 1 a 90)
+                    Minuto {editTipo === 'cambio' && editTiempo === 2 ? '(0 para Entretiempo)' : '(ej: 1 a 90)'}
                   </label>
                   <input
                     type="number"
-                    min={1}
+                    min={editTipo === 'cambio' && editTiempo === 2 ? 0 : 1}
                     max={130}
                     required
                     value={editMinuto}
-                    onChange={e => setEditMinuto(Math.max(1, Number(e.target.value)))}
+                    onChange={e => setEditMinuto(editTipo === 'cambio' && editTiempo === 2 ? Math.max(0, Number(e.target.value)) : Math.max(1, Number(e.target.value)))}
                     className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
                   />
                 </div>
               </div>
+
+              {editTipo === 'cambio' && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditTiempo(2);
+                      setEditMinuto(0);
+                    }}
+                    className={`w-full py-2 px-3 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      editTiempo === 2 && editMinuto === 0
+                        ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-[#3ddc84]'
+                        : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f] hover:text-white hover:border-[#3ddc84]/50'
+                    }`}
+                  >
+                    <span>⏸️</span>
+                    <span>Asignar tiempo 0' 2T (Entretiempo)</span>
+                    {editTiempo === 2 && editMinuto === 0 && <span className="text-[10px]">✓ Activo</span>}
+                  </button>
+                  {editTiempo === 2 && editMinuto === 0 && (
+                    <p className="text-[11px] text-[#3ddc84] font-medium mt-1 text-center">
+                      ✓ La sustitución se guardará con tiempo 0' 2T (Entretiempo)
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

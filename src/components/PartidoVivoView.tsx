@@ -126,6 +126,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   // Para sustituciones (2 pasos)
   const [pasoSustitucion, setPasoSustitucion] = useState<1 | 2>(1);
   const [jugadorSaleId, setJugadorSaleId] = useState<string | null>(null);
+  const [esSustitucionEntretiempo, setEsSustitucionEntretiempo] = useState<boolean>(false);
 
   // Para subtipos de gol en vivo (jugada, penal, autogol)
   const [subtipoGol, setSubtipoGol] = useState<'jugada' | 'penal' | 'autogol'>('jugada');
@@ -437,9 +438,29 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     }
 
     const minInfo = calcularMinutoDisplay(segundosTotales, tiempo, duracionReglamentariaMin);
-    setMinutoInfoCongelado(minInfo);
-    setMinutoCongelado(minInfo.minuto);
-    setSegundoCongelado(minInfo.segundo);
+
+    // Detección de Entretiempo: terminó el 1T (reloj pausado en/pasado tiempo reglamentario) o 2T seleccionado pero aún no iniciado (0 seg)
+    const estaEnEntretiempo = (tiempo === 2 && segundosTotales === 0 && !corriendo) || 
+                              (tiempo === 1 && !corriendo && Math.floor(segundosTotales / 60) >= duracionReglamentariaMin);
+
+    if (tipo === 'cambio' && estaEnEntretiempo) {
+      setEsSustitucionEntretiempo(true);
+      setMinutoCongelado(0);
+      setSegundoCongelado(0);
+      setMinutoInfoCongelado({
+        minuto: 0,
+        segundo: 0,
+        esAgregado: false,
+        minutoBase: 0,
+        minutoExtra: 0,
+        display: "0' 2T"
+      });
+    } else {
+      setEsSustitucionEntretiempo(false);
+      setMinutoInfoCongelado(minInfo);
+      setMinutoCongelado(minInfo.minuto);
+      setSegundoCongelado(minInfo.segundo);
+    }
 
     // Córner: solo requiere equipo, no jugador
     if (tipo === 'corner') {
@@ -533,14 +554,22 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     sincronizarReloj();
     const minInfo = minutoInfoCongelado || calcularMinutoDisplay(segundosTotales, tiempo, duracionReglamentariaMin);
 
+    const esEntretiempo = (pendienteConfirmacion.tipo === 'cambio' || tipoSeleccionado === 'cambio') && 
+                          (esSustitucionEntretiempo || (tiempo === 2 && minInfo.minuto === 0));
+
+    const tiempoFinal = esEntretiempo ? 2 : tiempo;
+    const minutoFinal = esEntretiempo ? 0 : minInfo.minuto;
+    const segundoFinal = esEntretiempo ? 0 : minInfo.segundo;
+    const displayFinal = esEntretiempo ? "0' 2T" : minInfo.display;
+
     const nuevaInc: Incidencia = {
       id: 'inc-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
       partido_id: draft.partido.id,
-      tiempo,
-      minuto: minInfo.minuto,
-      segundo: minInfo.segundo,
-      minuto_display: minInfo.display,
-      minuto_agregado: minInfo.esAgregado ? minInfo.minutoExtra : undefined,
+      tiempo: tiempoFinal,
+      minuto: minutoFinal,
+      segundo: segundoFinal,
+      minuto_display: displayFinal,
+      minuto_agregado: (!esEntretiempo && minInfo.esAgregado) ? minInfo.minutoExtra : undefined,
       tipo: pendienteConfirmacion.tipo,
       es_penal: pendienteConfirmacion.tipo === 'gol' ? pendienteConfirmacion.esPenal : undefined,
       equipo: pendienteConfirmacion.equipo,
@@ -555,6 +584,15 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     setIncidencias(nuevasIncs);
     recalcularGoles(nuevasIncs);
 
+    // Si la sustitución fue en entretiempo y estábamos en 1T con tiempo cumplido, pasar reloj formalmente a 2T en pausa
+    if (esEntretiempo && tiempo === 1 && Math.floor(segundosTotales / 60) >= duracionReglamentariaMin) {
+      setTiempo(2);
+      setSegundosTotales(0);
+      setCorriendo(false);
+      startedAtRef.current = null;
+      baseSecondsRef.current = 0;
+    }
+
     // Resetear completamente los estados de modales y asistentes
     setModalIncidenciaAbierto(false);
     setPasoComentario(false);
@@ -566,6 +604,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     setPasoSustitucion(1);
     setDetalleTexto('');
     setMinutoInfoCongelado(null);
+    setEsSustitucionEntretiempo(false);
 
     // Enviar a API / Storage
     await ApiService.guardarIncidencia(nuevaInc);
@@ -583,7 +622,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
   // Abrir modal de edición de incidencia en vivo
   const handleAbrirEditarIncidenciaVivo = (inc: Incidencia) => {
     setIncidenciaEditandoVivo(inc);
-    setEditMinutoVivo(inc.minuto);
+    setEditMinutoVivo(inc.minuto !== undefined ? inc.minuto : 1);
     setEditTiempoVivo(inc.tiempo as 1 | 2);
     setEditTipoVivo(inc.tipo);
     setEditEsPenalVivo(!!(inc.es_penal || inc.detalle?.toLowerCase().includes('penal')));
@@ -599,13 +638,16 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
     e.preventDefault();
     if (!incidenciaEditandoVivo || !draft) return;
 
+    const esEntretiempo = (editTipoVivo === 'cambio' && editTiempoVivo === 2 && Number(editMinutoVivo) === 0);
+    const minutoDisplay = esEntretiempo ? "0' 2T" : `${editMinutoVivo}'`;
+
     const actualizadas = incidencias.map(i => {
       if (i.id === incidenciaEditandoVivo.id) {
         return {
           ...i,
           tiempo: editTiempoVivo,
-          minuto: editMinutoVivo,
-          minuto_display: `${editMinutoVivo}'`,
+          minuto: Number(editMinutoVivo),
+          minuto_display: minutoDisplay,
           tipo: editTipoVivo,
           es_penal: editTipoVivo === 'gol' ? editEsPenalVivo : undefined,
           equipo: editEquipoVivo,
@@ -1492,7 +1534,10 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                 </h3>
               </div>
               <p className="text-xs text-[#9aa89f] mt-0.5">
-                Momento: <strong className="text-white">{minutoInfoCongelado?.display || `${minutoCongelado}'`}</strong> ({tiempo}T)
+                Momento: <strong className="text-white">
+                  {esSustitucionEntretiempo ? "0' 2T (Entretiempo)" : (minutoInfoCongelado?.display || `${minutoCongelado}'`)}
+                </strong>
+                {!esSustitucionEntretiempo && ` (${tiempo}T)`}
                 {goleadorId && (
                   <span className="text-[#3ddc84] ml-1 font-semibold">
                     • Goleador: #{jugadoresMap.get(goleadorId)?.numero} {jugadoresMap.get(goleadorId)?.nombre}
@@ -1511,7 +1556,7 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       Paso Final: Comentario y Confirmación
                     </span>
                     <span className="font-mono font-bold text-white">
-                      {minutoInfoCongelado?.display || `${minutoCongelado}'`} ({tiempo}T)
+                      {esSustitucionEntretiempo ? "0' 2T (Entretiempo)" : `${minutoInfoCongelado?.display || `${minutoCongelado}'`} (${tiempo}T)`}
                     </span>
                   </div>
 
@@ -1739,6 +1784,56 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
                       }`}
                     >
                       {draft.partido.rival}
+                    </button>
+                  </div>
+                )}
+
+                {/* Panel destacado para Sustitución en Entretiempo (0' 2T) */}
+                {tipoSeleccionado === 'cambio' && (
+                  <div className="mb-3 p-3 rounded-xl bg-[#0f1712] border border-[#243d2c] flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl shrink-0">⏸️</span>
+                      <div>
+                        <span className="text-xs font-bold text-white block">
+                          Sustitución en el Entretiempo
+                        </span>
+                        <span className="text-[11px] text-[#9aa89f]">
+                          {esSustitucionEntretiempo 
+                            ? "Quedará registrada con tiempo 0' 2T" 
+                            : `Tiempo reloj: ${minutoInfoCongelado?.display || `${minutoCongelado}'`} (${tiempo}T)`}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (esSustitucionEntretiempo) {
+                          setEsSustitucionEntretiempo(false);
+                          const minInfo = calcularMinutoDisplay(segundosTotales, tiempo, duracionReglamentariaMin);
+                          setMinutoInfoCongelado(minInfo);
+                          setMinutoCongelado(minInfo.minuto);
+                          setSegundoCongelado(minInfo.segundo);
+                        } else {
+                          setEsSustitucionEntretiempo(true);
+                          setMinutoCongelado(0);
+                          setSegundoCongelado(0);
+                          setMinutoInfoCongelado({
+                            minuto: 0,
+                            segundo: 0,
+                            esAgregado: false,
+                            minutoBase: 0,
+                            minutoExtra: 0,
+                            display: "0' 2T"
+                          });
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                        esSustitucionEntretiempo
+                          ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-[#3ddc84]'
+                          : 'bg-[#182a1f] border-[#243d2c] text-[#9aa89f] hover:text-white hover:border-[#3ddc84]/50'
+                      }`}
+                    >
+                      {esSustitucionEntretiempo ? "✓ 0' 2T (Activo)" : "Marcar 0' 2T"}
                     </button>
                   </div>
                 )}
@@ -2598,19 +2693,45 @@ export const PartidoVivoView: React.FC<PartidoVivoViewProps> = ({
 
                 <div>
                   <label className="text-[11px] font-bold text-[#9aa89f] uppercase block mb-1">
-                    Minuto
+                    Minuto {editTipoVivo === 'cambio' && editTiempoVivo === 2 ? '(0 para Entretiempo)' : ''}
                   </label>
                   <input
                     type="number"
-                    min={1}
+                    min={editTipoVivo === 'cambio' && editTiempoVivo === 2 ? 0 : 1}
                     max={130}
                     required
                     value={editMinutoVivo}
-                    onChange={e => setEditMinutoVivo(Math.max(1, Number(e.target.value)))}
+                    onChange={e => setEditMinutoVivo(editTipoVivo === 'cambio' && editTiempoVivo === 2 ? Math.max(0, Number(e.target.value)) : Math.max(1, Number(e.target.value)))}
                     className="w-full bg-[#0f1712] border border-[#243d2c] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#3ddc84]"
                   />
                 </div>
               </div>
+
+              {editTipoVivo === 'cambio' && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditTiempoVivo(2);
+                      setEditMinutoVivo(0);
+                    }}
+                    className={`w-full py-2 px-3 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      editTiempoVivo === 2 && editMinutoVivo === 0
+                        ? 'bg-[#3ddc84]/20 border-[#3ddc84] text-[#3ddc84]'
+                        : 'bg-[#0f1712] border-[#243d2c] text-[#9aa89f] hover:text-white hover:border-[#3ddc84]/50'
+                    }`}
+                  >
+                    <span>⏸️</span>
+                    <span>Asignar tiempo 0' 2T (Entretiempo)</span>
+                    {editTiempoVivo === 2 && editMinutoVivo === 0 && <span className="text-[10px]">✓ Activo</span>}
+                  </button>
+                  {editTiempoVivo === 2 && editMinutoVivo === 0 && (
+                    <p className="text-[11px] text-[#3ddc84] font-medium mt-1 text-center">
+                      ✓ La incidencia quedará registrada con tiempo 0' 2T
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

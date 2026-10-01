@@ -414,10 +414,10 @@ export const FichaJugadorPartidoModal: React.FC<FichaJugadorPartidoModalProps> =
 
                       <div className="text-right shrink-0">
                         <span className="text-xs font-bold text-[#3ddc84]">
-                          {inc.minuto}'
+                          {inc.tiempo === 2 && inc.minuto === 0 ? "0' 2T" : `${inc.minuto}'`}
                         </span>
                         <span className="text-[10px] text-[#9aa89f] block">
-                          {inc.tiempo}T
+                          {inc.tiempo === 2 && inc.minuto === 0 ? 'ET' : `${inc.tiempo}T`}
                         </span>
                       </div>
                     </div>
