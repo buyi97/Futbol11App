@@ -7,7 +7,7 @@
  * - Goleadores del equipo en este torneo
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   X, 
   Shield, 
@@ -19,7 +19,9 @@ import {
   XCircle, 
   Clock,
   Sparkles,
-  MapPin
+  MapPin,
+  ArrowLeft,
+  ExternalLink
 } from 'lucide-react';
 import { FichaEquipoData } from '../types';
 
@@ -28,15 +30,35 @@ interface FichaEquipoModalProps {
   nombreTorneo: string;
   colorPropio?: string;
   onClose: () => void;
+  onSeleccionarEquipo?: (nombreEquipo: string) => void;
 }
 
 export const FichaEquipoModal: React.FC<FichaEquipoModalProps> = ({
   ficha,
   nombreTorneo,
   colorPropio = '#3ddc84',
-  onClose
+  onClose,
+  onSeleccionarEquipo
 }) => {
+  const [historialNavegacion, setHistorialNavegacion] = useState<string[]>([]);
+
   if (!ficha) return null;
+
+  const handleNavegarAEquipo = (equipoRival: string) => {
+    if (!equipoRival || equipoRival.toLowerCase() === ficha.equipo.toLowerCase()) return;
+    setHistorialNavegacion(prev => [...prev, ficha.equipo]);
+    onSeleccionarEquipo?.(equipoRival);
+  };
+
+  const handleVolverEquipoAnterior = () => {
+    if (historialNavegacion.length === 0) return;
+    const nuevoHistorial = [...historialNavegacion];
+    const equipoPrevio = nuevoHistorial.pop();
+    setHistorialNavegacion(nuevoHistorial);
+    if (equipoPrevio) {
+      onSeleccionarEquipo?.(equipoPrevio);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -53,9 +75,21 @@ export const FichaEquipoModal: React.FC<FichaEquipoModalProps> = ({
               : 'linear-gradient(135deg, #182a1f, #121c15)'
           }}
         >
-          <div className="flex items-center gap-3.5">
+          <div className="flex items-center gap-3.5 min-w-0">
+            {historialNavegacion.length > 0 && (
+              <button
+                type="button"
+                onClick={handleVolverEquipoAnterior}
+                className="p-2 rounded-xl bg-[#182a1f] border border-[#243d2c] text-zinc-300 hover:text-white hover:bg-[#243d2c] flex items-center gap-1.5 text-xs font-semibold transition-colors shrink-0 shadow-sm"
+                title={`Volver a ${historialNavegacion[historialNavegacion.length - 1]}`}
+              >
+                <ArrowLeft className="w-4 h-4 text-[#3ddc84]" />
+                <span className="hidden sm:inline">Volver</span>
+              </button>
+            )}
+
             <div 
-              className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg font-display font-bold text-xl"
+              className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg font-display font-bold text-xl shrink-0"
               style={{
                 backgroundColor: ficha.esPropio ? `${colorPropio}30` : '#243d2c',
                 color: ficha.esPropio ? colorPropio : '#9aa89f',
@@ -64,14 +98,14 @@ export const FichaEquipoModal: React.FC<FichaEquipoModalProps> = ({
             >
               <Shield className="w-6 h-6 fill-current" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-display font-bold text-xl sm:text-2xl text-white tracking-wide">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-display font-bold text-xl sm:text-2xl text-white tracking-wide truncate">
                   {ficha.equipo}
                 </h3>
                 {ficha.esPropio && (
                   <span 
-                    className="text-xs px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm"
+                    className="text-xs px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm shrink-0"
                     style={{
                       backgroundColor: colorPropio,
                       color: '#0f1712'
@@ -263,10 +297,23 @@ export const FichaEquipoModal: React.FC<FichaEquipoModalProps> = ({
                         </span>
 
                         <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm sm:text-base text-white font-bold font-display tracking-wide">
-                              vs {p.rival}
-                            </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-zinc-400 font-semibold font-display uppercase tracking-wider">vs</span>
+                            {onSeleccionarEquipo ? (
+                              <button
+                                type="button"
+                                onClick={() => handleNavegarAEquipo(p.rival)}
+                                className="text-sm sm:text-base text-white hover:text-[#3ddc84] font-bold font-display tracking-wide underline decoration-dotted underline-offset-4 hover:decoration-[#3ddc84] hover:decoration-solid transition-all text-left flex items-center gap-1 group cursor-pointer"
+                                title={`Ver ficha completa de ${p.rival}`}
+                              >
+                                <span className="group-hover:translate-x-0.5 transition-transform">{p.rival}</span>
+                                <ExternalLink className="w-3.5 h-3.5 text-zinc-500 group-hover:text-[#3ddc84] transition-colors shrink-0" />
+                              </button>
+                            ) : (
+                              <span className="text-sm sm:text-base text-white font-bold font-display tracking-wide">
+                                {p.rival}
+                              </span>
+                            )}
                           </div>
                           {(p.cancha || p.fechaHora) && (
                             <p className="text-[11px] text-zinc-500 flex items-center gap-1 mt-0.5">

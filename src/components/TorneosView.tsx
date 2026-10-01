@@ -1737,6 +1737,7 @@ export const TorneosView: React.FC<TorneosViewProps> = ({
           nombreTorneo={torneoActualObj?.nombre || 'Torneo'}
           colorPropio={colorPropio}
           onClose={() => setEquipoFichaSeleccionado(null)}
+          onSeleccionarEquipo={(equipo) => setEquipoFichaSeleccionado(equipo)}
         />
       )}
 
